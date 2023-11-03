@@ -71,7 +71,7 @@ otu_rare = otutab %>% column_to_rownames('Group') %>%
   select(-label, -numOtus)
 # Calculate rarefaction curve 
 rarecurve(otu_rare, step = 100, xlab= 'Sample Size', ylab='OTUs')
-ggsave('plots/mothur/rarecurve.png', dpi=600)
+
 
 # Import calculcations of alpha divrsity (subsampled to 100 000 reads per sample)
 alpha = read.delim('data/mothur/final.opti_mcc.0.03.pick.groups.ave-std.summary') %>%
@@ -134,7 +134,7 @@ tmp2 = alpha_meta %>%
   filter(biota == 'Sporobiota')%>%
   group_by(person) %>%
   arrange(date, .by_group = TRUE) %>%
-  mutate(sobs_diff= sobs -lag(sobs, default = first(sobs))) %>%
+  mutate(sobs_diff= sobs - lag(sobs, default = first(sobs))) %>%
   mutate(sobs_diff = ifelse(row_number() == 1, first(sobs), sobs_diff)) 
 
 # Combine both data.frames and turn into tibble
@@ -152,4 +152,73 @@ ggplot(tmp3, aes(x=day, y=sobs_diff)) +
 ggsave('plots/mothur/increase_decrease_daily.png', dpi = 600)
 
 # Unique OTUs accumulation curve (how many new unique OTUs were aqured each day)
+# Join OTUtable with metadata 
+otuPA = otu_rare
+otuPA[otuPA > 0] = 1
+otuPA = rownames_to_column(otuPA, 'samples')
+otu_meta <- left_join(metadata, otuPA)
+
+# Calculate the number of unique new OTUs acquired each day from all previous days
+uniqueM = otu_meta %>%
+  filter(biota == 'Microbiota') %>%
+  select(person, day, starts_with('Otu')) %>%
+  pivot_longer(names_to = 'otu', values_to = 'PA', cols = 3:765) %>%
+  group_by(person) %>%
+  dplyr::arrange(otu, day, .by_group = TRUE) %>%
+  #filter(PA != 0) %>%  # IS this necessary?
+  # Create new column new_otus is 1 if the OTU is present (PA > 0) on the current date and was not present on the previous date (lag(PA))
+  mutate(new_otus = ifelse(PA > 0 & lag(PA, default = 0) == 0, 1, 0)) %>%
+  ungroup() %>%
+  group_by(person, day) %>%
+  summarise(., unique= sum(new_otus)) %>%
+  mutate(., unique_old_new = cumsum(unique)) %>%
+  mutate(biota = 'Microbiota')
+
+uniqueS = otu_meta %>%
+  filter(biota == 'Sporobiota') %>%
+  select(person, day, starts_with('Otu')) %>%
+  pivot_longer(names_to = 'otu', values_to = 'PA', cols = 3:765) %>%
+  group_by(person) %>%
+  dplyr::arrange(otu, day, .by_group = TRUE) %>%
+  #filter(PA != 0) %>%  # IS this necessary?
+  # Create new column new_otus is 1 if the OTU is present (PA > 0) on the current date and was not present on the previous date (lag(PA))
+  mutate(new_otus = ifelse(PA > 0 & lag(PA, default = 0) == 0, 1, 0)) %>%
+  ungroup() %>%
+  group_by(person, day) %>%
+  summarise(., unique= sum(new_otus)) %>%
+  mutate(., unique_old_new = cumsum(unique)) %>%
+  mutate(biota = 'Sporobiota')
+
+unique_otus = rbind(uniqueM, uniqueS)
+
+ggplot(unique_otus, aes(x=day, y=unique_old_new)) +
+  geom_line(aes(color=person)) +
+  ylim(0, 1000) +
+  geom_smooth() +
+  facet_wrap(~biota) +
+  labs(x='Day', y='Accumulation of new unique OTUs') +
+  theme_bw()
+
+ggsave('plots/mothur/unique_otus_accumulation.png', dpi=600)
+
+# The graphs and code above do not take into account the fact that some OTUs may disepear and than become apperent again becouse of the method of sequnecing 
+# Graph that takes into account that some otus are present than not and than back again - so all that are completly new
+
+# A list of OTUs in the first sample of person A 
+otuA1 = otutab %>%
+  as_tibble() %>%
+  pivot_longer(names_to = 'otu', values_to = 'value', cols=4:766) %>%
+  left_join(metadata, by=join_by('Group' == 'samples')) %>%
+  select(Group, person, day, otu, value) %>%
+  filter(day==0 & value > 0 & person == 'A') %>%
+  select(otu) %>%
+  as.list()
+
+
+otutab %>% left_join(metadata, by=join_by('Group' == 'samples')) %>%
+  as_tibble() %>%
+  filter(biota== 'Microbiota') %>%
+  select(person, day,starts_with('Otu')) %>%
+  group_by(person) %>%
+  arrange(day, .by_group = TRUE)
 
