@@ -13,21 +13,19 @@ set.seed(1996)
 # Colors for microbiota (colm) and sporobiota (cols)
 colm = c('#47B66A')
 cols = c('#D9A534')
+colsm = c('#47B66A', '#D9A534')
 # Colors for extreme events
 col_extreme = c("#8A05EC",
-                "#8d1d90",
+                "#8d1d80",
                 "#96aa00",
                 "#0054bd",
                 "#ffab2d",
-                "#00609d",
-                "#ff7d64",
+                "#ff7d01",
                 "#02c2ef",
-                "#c10055",
-                "#007d29",
-                "#f18bff",
+                "#c10065",
+                "#007d36",
                 "#505d00",
-                "#ffa7dc",
-                "#8495cb")
+                "#ffa7dc")
 
 
 # Import OTU table and taxonomy table and remove rare OTUs from taxtab
@@ -122,14 +120,16 @@ tmp2 = alpha_meta %>%
   arrange(person) %>%
   mutate(sobs_diff= sobs -lag(sobs, default = first(sobs))) %>%
   mutate(sobs_diff = ifelse(row_number() == 1, first(sobs), sobs_diff)) 
-tmp3= inner_join(tmp1, tmp2, by='group') %>%
-  as.data.frame()
 
-ggplot(tmp3, aes(x=day.x)) +
-  geom_line(aes(y=sobs_diff.x), color= colm, linewidth=1.2) +
-  geom_line(aes(y=sobs_diff.y), color=cols, linewidth=1.2) +
-  geom_point(aes(y= sobs_diff.x, color=event14_type.x), size=2) +
-  geom_point(aes(y= sobs_diff.y, color=event14_type.x), size=2) +
-  scale_color_manual(values= col_extreme, na.value='#B8B9B6') +
-  facet_wrap(~person.x) +
-  labs(x='Day', y= 'Observed No. of OTUs', color= 'Type of event')
+tmp3= rbind(tmp1, tmp2) %>%
+  as_tibble()
+
+ggplot(tmp3, aes(x=day, y=sobs_diff)) +
+  geom_line(data=tmp3 %>% filter(biota == 'Microbiota'), color= colm, linewidth=1.2) +
+  geom_line(data=tmp3 %>% filter(biota == 'Sporobiota'), color= cols, linewidth=1.2) +
+  geom_point(aes(y=sobs_diff, color=event14_type), size=2) +
+  scale_color_manual(values=col_extreme, na.value='#B8B9B6') +
+  facet_wrap(~person) +
+  labs(x='Day', y= 'Observed OTUs', color= 'Type of event')
+
+# Number of unique new OTUs in the next day in each person
