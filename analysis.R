@@ -65,10 +65,18 @@ metadata[metadata == ''] = NA
 metadataM = filter(metadata, biota == 'microbiota')
 metadataS = filter(metadata, biota == 'sporobiota')
 
+# Rarefaction curve 
+# Transform otutab into shape for vegan::rarecurve 
+otu_rare = otutab %>% column_to_rownames('Group') %>%
+  select(-label, -numOtus)
+# Calculate rarefaction curve 
+rarecurve(otu_rare, step = 100, xlab= 'Sample Size', ylab='OTUs')
+ggsave('plots/mothur/rarecurve.png', dpi=600)
+
 # Import calculcations of alpha divrsity (subsampled to 100 000 reads per sample)
 alpha = read.delim('data/mothur/final.opti_mcc.0.03.pick.groups.ave-std.summary') %>%
   filter(method=='ave')
-
+# Add metadata
 alpha_meta = alpha %>% left_join(metadata, by=join_by('group' == 'samples'))
 
 ggplot(alpha_meta, aes(x=person, y=sobs, color=person)) +
@@ -108,19 +116,28 @@ ggplot(alpha_meta_tmp, aes(x=day, y=sobs)) +
 ggsave('plots/mothur/alpha_throught_time.png', dpi = 600)
 
 # Number of OTUs that have increased or decreased by day in each person
+# Calculate how sobs (observed number of OTUs increases or decreases in the next day)
+# 
 tmp1 = alpha_meta %>%
+  # Filter only samples from microbiota
   filter(biota == 'Microbiota')%>%
+  # Group_by person and arrange samples by person
   group_by(person) %>%
-  arrange(person) %>%
+  arrange(date, .by_group = TRUE) %>%
+  # Calculate how sobs observed number of OTUs increases or decreases in the next day and save into sobs_diff
   mutate(sobs_diff= sobs -lag(sobs, default = first(sobs))) %>%
+  # Add the value of the first sobs in each group to the column sobs_diff 
   mutate(sobs_diff = ifelse(row_number() == 1, first(sobs), sobs_diff))
+
+# Do the same for sporobiota 
 tmp2 = alpha_meta %>%
   filter(biota == 'Sporobiota')%>%
   group_by(person) %>%
-  arrange(person) %>%
+  arrange(date, .by_group = TRUE) %>%
   mutate(sobs_diff= sobs -lag(sobs, default = first(sobs))) %>%
   mutate(sobs_diff = ifelse(row_number() == 1, first(sobs), sobs_diff)) 
 
+# Combine both data.frames and turn into tibble
 tmp3= rbind(tmp1, tmp2) %>%
   as_tibble()
 
@@ -132,4 +149,7 @@ ggplot(tmp3, aes(x=day, y=sobs_diff)) +
   facet_wrap(~person) +
   labs(x='Day', y= 'Observed OTUs', color= 'Type of event')
 
-# Number of unique new OTUs in the next day in each person
+ggsave('plots/mothur/increase_decrease_daily.png', dpi = 600)
+
+# Unique OTUs accumulation curve (how many new unique OTUs were aqured each day)
+
