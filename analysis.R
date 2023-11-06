@@ -65,14 +65,6 @@ metadata[metadata == ''] = NA
 metadataM = filter(metadata, biota == 'microbiota')
 metadataS = filter(metadata, biota == 'sporobiota')
 
-# Rarefaction curve 
-# Transform otutab into shape for vegan::rarecurve 
-otu_rare = otutab %>% column_to_rownames('Group') %>%
-  select(-label, -numOtus)
-# Calculate rarefaction curve 
-rarecurve(otu_rare, step = 100, xlab= 'Sample Size', ylab='OTUs')
-
-
 # Import calculcations of alpha divrsity (subsampled to 100 000 reads per sample)
 alpha = read.delim('data/mothur/final.opti_mcc.0.03.pick.groups.ave-std.summary') %>%
   filter(method=='ave')
@@ -214,6 +206,9 @@ otuA1 = otutab %>%
   select(otu) %>%
   as.list()
 
+otuPA = otu_rare
+otuPA[otuPA > 0] = 1
+otuPA = rownames_to_column(otuPA, 'samples')
 
 otutab %>% left_join(metadata, by=join_by('Group' == 'samples')) %>%
   as_tibble() %>%
