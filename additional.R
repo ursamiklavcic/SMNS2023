@@ -26,8 +26,6 @@ otus =rbind(otuM, otuS) %>%
 
 rarecurve(otus, step=100)
 
-
-
 # Graph x= Otus, y=mean relabund from most to least abundand
 otutab= read.delim('data/mothur/final.opti_mcc.0.03.pick.shared') %>%
   select(-label, -numOtus) %>%
