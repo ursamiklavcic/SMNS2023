@@ -286,7 +286,7 @@ unique = otu_meta %>%
 
 unique %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Both') %>% 
   rbind(uniqueM %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Microbiota')) %>% 
-  rbind(uniqueS %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Sporobiota')) %>%
+  rbind(uniqueS %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Sporobiota') ) %>%
   ggplot(aes(x=person,y=sum, color=biota))+
   geom_point() +
   ylim(0,800) +
