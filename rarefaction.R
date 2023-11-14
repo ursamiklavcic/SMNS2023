@@ -206,7 +206,7 @@ shared %>%
 ggsave('plots/mothur/alpha_samplingEffect.png', dpi = 600)
 
 # What is the number to which I should rarefy my data? 
-shared1 = read_tsv('data/mothur/final-48.shared') %>%
+shared1 = read_tsv('data/mothur/final.opti_mcc.shared') %>%
   select(Group, starts_with('Otu')) %>%
   pivot_longer(-Group) %>%
   # Calculate the total number of seqs for each otu and remove otus with 0 reads
