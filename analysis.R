@@ -258,19 +258,19 @@ uniqueM %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Mi
   rbind(uniqueS %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Sporobiota')) 
 
 # rbind uniqueM and S 
-unique_otus = rbind(uniqueM, uniqueS)
+unique_otus = rbind(uniqueM, uniqueS) %>% print(n=50)
 
 ggplot(unique_otus, aes(x=day, y=unique)) +
-  geom_line(aes(color=person), linewidth=1) +
+  geom_point(aes(color=person), linewidth=1) +
   scale_y_log10() +
-  xlim(50,200) +
+  xlim(1,200) +
   #ylim(0, 400) +
   geom_smooth() +
   facet_wrap(~biota) +
   labs(x='Day', y='log(Accumulation of new unique OTUs per time point)', color='Individual') +
   theme_bw()
 
-ggsave('plots/mothur/accumulation_unique_log.png', dpi=600)
+ggsave('plots/mothur/accumulation_unique_log_point_excl_first.png', dpi=600)
 
 # If I dont separate microbiota and sporobiota 
 unique = otu_meta %>% 
@@ -299,7 +299,32 @@ ggsave('plots/mothur/unique_otus_perPerson.png', dpi=600)
 unique %>%
   filter(day != '0') %>%
   group_by(person) %>%
-  summarise(average_new_otu = mean(unique))
+  summarise(average_new_otu = mean(unique), sd=sd(unique))
+
+# What is the taxonomic determination of the OTUs that are new in later time-points
+otu_meta %>% 
+  #filter(biota == 'Microbiota') %>%
+  filter(day != 0) %>%
+  select(person, day, starts_with('Otu')) %>%
+  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:765) %>%
+  group_by(person, name) %>% 
+  arrange(day, .by_group = TRUE) %>% 
+  mutate(otu_sum = cumsum(PA), 
+         otu_unique = ifelse(otu_sum == 1 & lag(otu_sum, default = 0) == 0, 1, 0)) %>%
+  ungroup() %>%
+  left_join(taxtab, by=join_by('name' == 'otu')) %>%
+  group_by(person, Phylum) %>% summarise(sum_unique=sum(otu_unique)) %>% write_csv(., 'results/mothur/unique_taxonomy.csv')
+  ggplot(aes(x=sum_unique, y=Phylum, fill=Phylum)) +
+  geom_bar(stat='identity') +
+  labs(x='Sum of OTUs') +
+  facet_wrap(~person) +
+  theme_bw()
+
+ggsave('plots/mothur/taxonomy_uniques.png', dpi=600)
+
+# what is the total abundance of OTUs that are newly aquired in that sample?
+
+
 
 # Temporal trends in beta diversity 
 braycurtis = read_tsv('data/mothur/final.opti_mcc.0.03.pick.braycurtis.0.03.lt.ave.dist')
