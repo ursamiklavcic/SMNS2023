@@ -182,7 +182,7 @@ uniqueM = otu_meta %>%
   filter(biota == 'Microbiota') %>%
     # Select only the columns I need and trasform into longer format
   select(person, day, starts_with('Otu')) %>%
-  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:3003) %>%
+  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:3002) %>%
   # Group the dataframe by person and otu (OTUs)
   group_by(person, name) %>% 
   # Arrange by day
@@ -202,7 +202,7 @@ uniqueS =otu_meta %>%
   filter(biota == 'Sporobiota') %>%
     # Select only the columns I need and trasform into longer format
   select(person, day, starts_with('Otu')) %>%
-  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:3003) %>%
+  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:3002) %>%
   # Group the dataframe by person and otu (OTUs)
   group_by(person, name) %>% 
   # Arrange by day
@@ -238,9 +238,9 @@ ggplot(unique_otus, aes(x=day, y=unique)) +
 ggsave('plots/mothur/accumulation_unique_log_point_excl_first.png', dpi=600)
 
 # If I don't separate microbiota and sporobiota 
-unique = otu_meta %>% 
+unique_all = otu_meta %>% 
   select(person, day, starts_with('Otu')) %>%
-  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:3003) %>%
+  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:3002) %>%
   group_by(person, name) %>% 
   arrange(day, .by_group = TRUE) %>% 
   mutate(otu_sum = cumsum(PA), 
@@ -249,19 +249,22 @@ unique = otu_meta %>%
   group_by(person, day) %>% 
   summarise(., unique= sum(otu_unique))
 
-unique %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Both') %>% 
-  rbind(uniqueM %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Microbiota')) %>% 
-  rbind(uniqueS %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Sporobiota')) %>%
-  ggplot(aes(x=person,y=sum, color=biota))+
-  geom_point() +
+#unique_all %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Both') %>% 
+  #rbind(uniqueM %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Microbiota')) %>% 
+uniqueM %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Microbiota') %>%
+  left_join(uniqueS %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Sporobiota'), by='person') %>%
+  ggplot() +
+  geom_segment(aes(x=person, xend=person,y=sum.x, yend=sum.y ), color='grey') +
+  geom_point(aes(x=person, y=sum.x), color=colm, size=3) +
+  geom_point(aes(x=person, y=sum.y), color=cols, size=3) +
   theme_bw() +
-  labs(x='Individual', y='Sum of unique OTUs through duration of the study', color='Type of biota') +
-  ylim(0, 2500)
-
+  labs(y='Individual', x='Sum of unique OTUs through duration of the study') +
+  ylim(0,2200)
+  
 ggsave('plots/mothur/unique_otus_perPerson.png', dpi=600)
 
 # What is a persons average new OTU accumulation
-unique %>%
+unique_all %>%
   filter(day != '0') %>%
   group_by(person) %>%
   summarise(average_new_otu = mean(unique), sd=sd(unique))
@@ -269,7 +272,7 @@ unique %>%
 # What is the taxonomic determination of the OTUs that are new in later time-points
 unique_phylum = otu_meta %>% 
   select(person, day, starts_with('Otu')) %>%
-  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:3003) %>%
+  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:3002) %>%
   group_by(person, name) %>% 
   arrange(day, .by_group = TRUE) %>% 
   mutate(otu_sum = cumsum(PA), 
@@ -318,7 +321,81 @@ otu_meta %>%
   theme_bw()
 ggsave('plots/mothur/uniqueOTU_abundance.png', dpi=600)
 
+############# I will come bactk to this 
 # Transient or stationary OTUs in microbiota and sporobiota. 
+common_otus = otu_rare %>% pivot_longer(names_to = 'name', values_to = 'value', cols=2:3001) %>%
+  group_by(name) %>%
+  summarize(value=sum(value)) %>%
+  filter(value > 10000) %>%
+  pull(name)
 
-# Temporal trends in beta diversity 
-braycurtis = read_tsv('data/mothur/final.opti_mcc.0.03.pick.braycurtis.0.03.lt.ave.dist')
+otu_rel = decostand(otu_rare %>% column_to_rownames('Group'), method='total', MARGIN = 1)
+rowSums(otu_rel)
+
+otu_rel %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(names_to = 'name', values_to = 'value', cols=2:3001) %>%
+  left_join(metadata, by=join_by('Group' == 'samples')) %>%
+  group_by(name) %>%
+  mutate(relabund=log(value/sum(value))) %>%
+  filter(name %in% common_otus) %>%
+  ungroup() %>%
+  # Should only choose OTUs that are present in every time point of all individuals? 
+  ggplot(aes(name, time_point, fill=relabund)) +
+  geom_tile() +
+  facet_grid(biota~person)
+# This does not work as a graphical representation
+##############
+
+# Residency of OTUS (always present in 1 person vs always present in all individuals?)
+always_personM = otu_rare %>% left_join(metadata, by=join_by('Group' == 'samples')) %>% 
+  # filter only microbiota samples and regular samples without extreme
+  filter(biota== 'Microbiota' & sample_type == 'regular') %>%
+  select(Group, person, day, date, starts_with('Otu')) %>%
+  pivot_longer(names_to = 'name', values_to = 'count', cols = starts_with('Otu')) %>%
+  # Make column PA presence/absence
+  mutate(PA =ifelse(count > 0, 1, 0)) %>%
+  # Group and arange by day and count all the presence of each OTU
+  group_by(person, name) %>% 
+  arrange(date, .by_group = TRUE) %>% 
+  mutate(otu_sum = cumsum(PA)) %>%
+  ungroup() %>% 
+  # Filter otu_sum with 12 counts of PA, which means they were present in all 12 time points! 
+  filter(otu_sum >= 12) %>%
+  left_join(taxtab, by='name') 
+
+ggplot(always_personM, aes(y=Phylum, fill= Phylum)) +
+  geom_bar(stat='count') +
+  facet_grid(~person)
+
+
+# Time trends of beta diversity 
+readDist = function(phylip_file) {
+
+ # Read the first line of the phylip file to find out how many sequences/samples it contains
+    temp_connection = file(phylip_file, 'r')
+    len = readLines(temp_connection, n=1)
+    len = as.numeric(len)
+    close(temp_connection)
+    
+ 
+    phylip_data = read.table(phylip_file, fill=T, row.names=1, skip=1, col.names=1:len)
+    phylip_matrix = as.dist(phylip_data)
+    return(phylip_matrix)
+}
+dist = readDist('data/mothur/final.opti_mcc.0.03.pick.braycurtis.0.03.lt.ave.dist') 
+
+dist %>% as.matrix() %>% 
+  as_tibble(rownames= 'sample') %>%
+  pivot_longer(-sample) %>%
+  filter(sample < name) %>%
+  left_join(metadata %>% select(samples, person, day, date, biota), by=join_by('sample' == 'samples')) %>%
+  left_join(metadata %>% select(samples, person, day, date, biota), by=join_by('name' == 'samples')) %>%
+  mutate(diff=abs(day.x-day.y), 
+         biota= ifelse(biota.x==biota.y, TRUE, FALSE)) %>%
+  group_by(diff, person.x, biota) %>%
+  summarise(median=median(value)) %>%
+  ungroup() %>%
+  ggplot(aes(x=diff, y=median, color=person.x)) +
+  geom_line() +
+  facet_grid(~biota)
