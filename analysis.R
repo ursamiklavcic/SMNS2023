@@ -369,7 +369,7 @@ ggplot(always_personM, aes(y=Phylum, fill= Phylum)) +
   facet_grid(~person)
 
 
-# Time trends of beta diversity 
+# Import beta diverity Bray Curtis with 1000 resaplings from mothur 
 readDist = function(phylip_file) {
 
  # Read the first line of the phylip file to find out how many sequences/samples it contains
@@ -385,17 +385,43 @@ readDist = function(phylip_file) {
 }
 dist = readDist('data/mothur/final.opti_mcc.0.03.pick.braycurtis.0.03.lt.ave.dist') 
 
-dist %>% as.matrix() %>% 
+# Calculate if there is a difference in the distance between samples of individuals if they were sampled closer together and more appart between microbiota and sporobiota. 
+distM = dist %>% as.matrix() %>% 
   as_tibble(rownames= 'sample') %>%
   pivot_longer(-sample) %>%
-  filter(sample < name) %>%
-  left_join(metadata %>% select(samples, person, day, date, biota), by=join_by('sample' == 'samples')) %>%
-  left_join(metadata %>% select(samples, person, day, date, biota), by=join_by('name' == 'samples')) %>%
-  mutate(diff=abs(day.x-day.y), 
-         biota= ifelse(biota.x==biota.y, TRUE, FALSE)) %>%
-  group_by(diff, person.x, biota) %>%
-  summarise(median=median(value)) %>%
+  # Remove the distances of the same sample 
+  filter(sample != name) %>%
+  # Add metadata
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('sample' == 'samples')) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('name' == 'samples')) %>%
+  # Filter so that I have only inter-person comparisons!
+  filter(person.x == person.y & biota.x == 'Microbiota' & biota.y == 'Microbiota') %>%
+  # Calculate the difference between sampling times
+  mutate(diff=abs(date.x-date.y)) %>%
+  # group by difference between days and person
+  group_by(diff, person.x) %>%
+  summarise(median=median(value), sd= sd(value)) %>%
   ungroup() %>%
-  ggplot(aes(x=diff, y=median, color=person.x)) +
-  geom_line() +
-  facet_grid(~biota)
+  mutate(biota = 'Microbiota')
+
+# Same as above, but for sporobiota
+distS =  dist %>% as.matrix() %>% 
+  as_tibble(rownames= 'sample') %>%
+  pivot_longer(-sample) %>%
+  filter(sample != name) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('sample' == 'samples')) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('name' == 'samples')) %>%
+  filter(person.x == person.y & biota.x == 'Sporobiota' & biota.y == 'Sporobiota') %>%
+  mutate(diff=abs(date.x-date.y)) %>%
+  group_by(diff, person.x) %>%
+  summarise(median=median(value), sd= sd(value)) %>%
+  ungroup() %>%
+  mutate(biota = 'Sporobiota')
+
+rbind(distM, distS) %>% ggplot(aes(x=diff, y=median, color=biota)) +
+  geom_point() +
+  scale_color_manual(values=c(colm, cols)) +
+  geom_smooth(aes(group=biota)) +
+  labs(x='Days between sampling points', y='Average Bray-Curtis distance', color='Type of biota') +
+  theme_bw()
+ggsave('plots/mothur/beta_throughTime.png', dpi=600)
