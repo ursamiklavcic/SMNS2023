@@ -134,41 +134,30 @@ ggplot(alpha_meta_tmp, aes(x=day, y=sobs)) +
   labs(x='Day', y= 'Observed OTUs', color= 'Type of extreme event')
 ggsave('plots/mothur/alpha_throught_time_Extreme.png', dpi = 600)
 
-# # Number of OTUs that have increased or decreased by day in each person
-# # Calculate how sobs (observed number of OTUs increases or decreases in the next day)
-# # 
-# tmp1 = alpha_meta %>%
-#   # Filter only samples from microbiota
-#   filter(biota == 'Microbiota')%>%
-#   # Group_by person and arrange samples by person
-#   group_by(person) %>%
-#   arrange(day, .by_group = TRUE) %>%
-#   # Calculate how sobs observed number of OTUs increases or decreases in the next day and save into sobs_diff
-#   mutate(sobs_diff= chao -lag(chao, default = first(chao))) %>%
-#   # Add the value of the first sobs in each group to the column sobs_diff 
-#   mutate(sobs_diff = ifelse(row_number() == 1, first(chao), sobs_diff))
-# 
-# # Do the same for sporobiota 
-# tmp2 = alpha_meta %>%
-#   filter(biota == 'Sporobiota')%>%
-#   group_by(person) %>%
-#   arrange(date, .by_group = TRUE) %>%
-#   mutate(sobs_diff= chao - lag(chao, default = first(chao))) %>%
-#   mutate(sobs_diff = ifelse(row_number() == 1, first(chao), sobs_diff)) 
-# 
-# # Combine both data.frames and turn into tibble
-# tmp3= rbind(tmp1, tmp2) %>%
-#   as_tibble()
-# 
-# ggplot(tmp3, aes(x=day, y=sobs_diff)) +
-#   geom_line(data=tmp3 %>% filter(biota == 'Microbiota'), color= colm, linewidth=1.2) +
-#   geom_line(data=tmp3 %>% filter(biota == 'Sporobiota'), color= cols, linewidth=1.2) +
-#   geom_point(aes(y=sobs_diff, color=event14_type), size=2) +
-#   scale_color_manual(values=col_extreme, na.value='#B8B9B6') +
-#   facet_wrap(~person) +
-#   labs(x='Day', y= 'Chao', color= 'Type of event')
-# 
-# ggsave('plots/mothur/increase_decrease_daily_chao.png', dpi = 600)
+# Correlations with alpha diversity 
+
+#Filter each table for Microbiota and sporobiota 
+alphaM = filter(alpha_meta, biota == 'Microbiota')
+alphaS = filter(alpha_meta, biota == 'Sporobiota')
+# Make 1 table for ploting 
+corr=left_join(alphaM, alphaS, by=c('original_sample', 'sample_type',
+'person', 'sex', 'age', 'height', 'weight', 'place', 'diet', 'alergy', 'food_supplements', 'general_level_activity', 'smoking', 'antibiotics_in_3weeks', 'cecum', 'gallstones', 'operation',
+'hospitalization','infection', 'disease', 'which', 'digestion', 'household_members', 'living', 'environment', 'date', 'day', 'time_point', 'diet14', 'antibiotics14', 'antibiotics14_type',
+'antibiotics14_duration', 'probiotics14','probiotics14_type', 'prebiotics14', 'prebiotics14_type', 'medication14', 'medication14_type', 'supplements14', 'supplements14_type', 'stress',
+'extreme_event14', 'event14_type', 'event14_what','moderate14', 'active14', 'dentist14', 'dentist14_date', 'operation14', 'operation14_date', 'vaccination14', 'vaccination14_type',
+'bristol'))
+
+ggplot(corr, aes(x=chao.x, y=chao.y)) +
+  geom_point() +
+  geom_smooth()
+
+# Correlation betwwen chao and other variables 
+corr_data = corr %>%
+  select(chao.x, chao.y, person, day, moderate14, active14, stress, bristol)
+library(GGally)
+ggpairs(corr_data, ggplot2::aes(colour=person))
+
+ggsave('plots/mothur/correlations_ggpairs.png', dpi=600)
 
 # Unique OTUs accumulation curve (how many new unique OTUs were acqured each day)
 # Join OTUtable with metadata 
