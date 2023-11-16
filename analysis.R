@@ -309,8 +309,7 @@ otu_meta %>%
   theme_bw()
 ggsave('plots/mothur/uniqueOTU_abundance.png', dpi=600)
 
-############# I will come back to this 
-# Transient or stationary OTUs in microbiota and sporobiota. 
+# Transient or stationary OTUs in microbiota and sporobiota.
 common_otus = otu_rare %>% pivot_longer(names_to = 'name', values_to = 'value', cols=2:3001) %>%
   group_by(name) %>%
   summarize(value=sum(value)) %>%
@@ -543,60 +542,49 @@ adonis2(distj~person*time_point, data=distj_meta, method='jaccard', permutations
 adonis2(distj~person*biota*stress*bristol, data=distj_meta, method='jaccard', permutations = 9999, na.action = na.exclude) # Some samples do not have data for physical activity, so na.action = na.exclude 
 # nothing is significant or explains more than 0,2% variability in data 
 
-# Box-plot of distances between samples of 1 individual vs. between individuals Bray-Curtis
-# Create another metadata object with dubled the person and biota 
-metadata2 =metadata
-metadata2= metadata2 %>% rename(person2 = person) 
-metadata2=metadata2 %>% rename(samples2 = samples)
-
-# Turn distanec matrix into data.frame 
+# Violin plot of distances between samples of 1 individual vs. between individuals Bray-Curtis
+# Turn distance matrix into data.frame 
 distbc_df = as.data.frame(as.matrix(distbc)) %>%
-  rownames_to_column('samples') %>%
-  pivot_longer(names_to= 'samples2',values_to = "dist", cols = 2:215) %>%
-  filter(samples != samples2)
+  rownames_to_column('sample') %>%
+  pivot_longer(-sample) %>%
+  filter(sample != name) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('sample' == 'samples')) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('name' == 'samples')) %>%
+  # Filter so that I have only inter-person comparisons!
+  mutate(same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual'), 
+         which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Microbiota',
+                             ifelse(biota.x == 'Sporobiota' & biota.y == 'Sporobiota', 'Sporobiota', 'Both'))) %>%
+  filter(which_biota != 'Both')
 
-dist_all = distbc_df %>%
-  left_join(metadata) %>%
-  select(samples, samples2, dist, person) %>%
-  left_join(metadata2) %>%
-  select(samples, samples2, dist, person, person2) %>%
-  mutate(same_person= if_else(person==person2, TRUE, FALSE)) %>%
-  left_join(metadata, by='samples')
-
-dist_all %>% ggplot(aes(x=same_person, y=dist, color=same_person)) +
+distbc_df %>% ggplot(aes(x=same_person, y=value, color=which_biota)) +
   #geom_boxplot(outlier.colour="black", outlier.shape=8, outlier.size=1) +
   geom_violin() +
-  geom_point(size=0.5, alpha=0.3) +
-  stat_compare_means() +
-  facet_wrap(~biota, nrow = 1) +
+  #geom_point(size=0.5, alpha=0.3) +
+  stat_compare_means(aes(group=paste0(same_person, which_biota))) +
   theme(axis.text.x=element_text(angle = 45, hjust = 1, vjust = 0.5)) +
-  labs(y="Bray-Curtis distance", x="Same individual", color=element_blank()) +
+  labs(y="Bray-Curtis distance", x="", color='Type of biota') +
   theme_bw()
 ggsave('plots/mothur/violin_braycurtis.png', dpi=600)
 
-# Box-plot of distances between samples of 1 individual vs. between individuals Jaccard
-# Turn distanec matrix into data.frame 
+# Jaccard distance
 distj_df = as.data.frame(as.matrix(distj)) %>%
-  rownames_to_column('samples') %>%
-  pivot_longer(names_to= 'samples2',values_to = "dist", cols = 2:215) %>%
-  filter(samples != samples2)
+  rownames_to_column('sample') %>%
+  pivot_longer(-sample) %>%
+  filter(sample != name) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('sample' == 'samples')) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('name' == 'samples')) %>%
+  # Filter so that I have only inter-person comparisons!
+  mutate(same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual'), 
+         which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Microbiota',
+                             ifelse(biota.x == 'Sporobiota' & biota.y == 'Sporobiota', 'Sporobiota', 'Both'))) %>%
+  filter(which_biota != 'Both')
 
-dist_all = distj_df %>%
-  left_join(metadata) %>%
-  select(samples, samples2, dist, person) %>%
-  left_join(metadata2) %>%
-  select(samples, samples2, dist, person, person2) %>%
-  mutate(same_person= if_else(person==person2, TRUE, FALSE)) %>%
-  left_join(metadata, by='samples')
-
-dist_all %>% ggplot(aes(x=same_person, y=dist, color=same_person)) +
+distj_df %>% ggplot(aes(x=same_person, y=value, color=which_biota)) +
   #geom_boxplot(outlier.colour="black", outlier.shape=8, outlier.size=1) +
-  geom_violin()+
-  geom_point(size=0.5, alpha=0.3) +
-  stat_compare_means() +
-  facet_wrap(~biota, nrow = 1) +
+  geom_violin() +
+  #geom_point(size=0.5, alpha=0.3) +
+  stat_compare_means(aes(group=paste0(same_person, which_biota))) +
   theme(axis.text.x=element_text(angle = 45, hjust = 1, vjust = 0.5)) +
-  ylim(0,1) +
-  labs(y="Jaccard distance", x="Same individual", color=element_blank()) +
+  labs(y="Jaccard distance", x="", color='Type of biota') +
   theme_bw()
 ggsave('plots/mothur/violin_jaccard.png', dpi=600)
