@@ -44,3 +44,16 @@ sum(otu_log10$value)
 ggplot(otu_log10, aes(x=otu, y=log10(value))) +
   geom_point()
 ggsave('plots/mothur/abundanceOTUs.png', dpi=600)
+
+
+
+
+# Nejc vprašanje glede Desulfovibrio
+otu_rel %>% rownames_to_column('Group')%>% pivot_longer(-Group) %>%
+  left_join(taxtab, by='name') %>% 
+  filter(Genus=='Desulfovibrio') %>%
+  left_join(metadata, by=join_by('Group' == 'samples')) %>%
+  ggplot(aes(x=time_point, y=value)) +
+  geom_point() +
+  facet_grid(~person) +
+  scale_y_log10()
