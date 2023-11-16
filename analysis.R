@@ -135,7 +135,6 @@ ggplot(alpha_meta_tmp, aes(x=day, y=sobs)) +
 ggsave('plots/mothur/alpha_throught_time_Extreme.png', dpi = 600)
 
 # Correlations with alpha diversity 
-
 #Filter each table for Microbiota and sporobiota 
 alphaM = filter(alpha_meta, biota == 'Microbiota')
 alphaS = filter(alpha_meta, biota == 'Sporobiota')
@@ -310,7 +309,7 @@ otu_meta %>%
   theme_bw()
 ggsave('plots/mothur/uniqueOTU_abundance.png', dpi=600)
 
-############# I will come bactk to this 
+############# I will come back to this 
 # Transient or stationary OTUs in microbiota and sporobiota. 
 common_otus = otu_rare %>% pivot_longer(names_to = 'name', values_to = 'value', cols=2:3001) %>%
   group_by(name) %>%
@@ -372,10 +371,10 @@ readDist = function(phylip_file) {
     phylip_matrix = as.dist(phylip_data)
     return(phylip_matrix)
 }
-dist = readDist('data/mothur/final.opti_mcc.0.03.pick.braycurtis.0.03.lt.ave.dist') 
+distbc = readDist('data/mothur/final.opti_mcc.0.03.pick.braycurtis.0.03.lt.ave.dist') 
 
 # Calculate if there is a difference in the distance between samples of individuals if they were sampled closer together and more appart between microbiota and sporobiota. 
-distM = dist %>% as.matrix() %>% 
+distM = distbc %>% as.matrix() %>% 
   as_tibble(rownames= 'sample') %>%
   pivot_longer(-sample) %>%
   # Remove the distances of the same sample 
@@ -394,7 +393,7 @@ distM = dist %>% as.matrix() %>%
   mutate(biota = 'Microbiota')
 
 # Same as above, but for sporobiota
-distS =  dist %>% as.matrix() %>% 
+distS =  distbc %>% as.matrix() %>% 
   as_tibble(rownames= 'sample') %>%
   pivot_longer(-sample) %>%
   filter(sample != name) %>%
@@ -413,4 +412,191 @@ rbind(distM, distS) %>% ggplot(aes(x=diff, y=median, color=biota)) +
   geom_smooth(aes(group=biota)) +
   labs(x='Days between sampling points', y='Average Bray-Curtis distance', color='Type of biota') +
   theme_bw()
-ggsave('plots/mothur/beta_throughTime.png', dpi=600)
+ggsave('plots/mothur/beta_BrayCurtis_throughTime.png', dpi=600)
+
+# Calculate if there is a difference in the distance between samples of individuals if they were sampled closer together and more appart between microbiota and sporobiota. 
+# With Jaccard distances - which take into account only presence/absence! Not abundance such as Bray-Curtis 
+distj = readDist('data/mothur/final.opti_mcc.0.03.pick.jclass.0.03.lt.ave.dist') 
+
+# Calculate if there is a difference in the distance between samples of individuals if they were sampled closer together and more appart between microbiota and sporobiota. 
+distM = distj %>% as.matrix() %>% 
+  as_tibble(rownames= 'sample') %>%
+  pivot_longer(-sample) %>%
+  # Remove the distances of the same sample 
+  filter(sample != name) %>%
+  # Add metadata
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('sample' == 'samples')) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('name' == 'samples')) %>%
+  # Filter so that I have only inter-person comparisons!
+  filter(person.x == person.y & biota.x == 'Microbiota' & biota.y == 'Microbiota') %>%
+  # Calculate the difference between sampling times
+  mutate(diff=abs(date.x-date.y)) %>%
+  # group by difference between days and person
+  group_by(diff, person.x) %>%
+  summarise(median=median(value), sd= sd(value)) %>%
+  ungroup() %>%
+  mutate(biota = 'Microbiota')
+
+# Same as above, but for sporobiota
+distS =  distj %>% as.matrix() %>% 
+  as_tibble(rownames= 'sample') %>%
+  pivot_longer(-sample) %>%
+  filter(sample != name) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('sample' == 'samples')) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('name' == 'samples')) %>%
+  filter(person.x == person.y & biota.x == 'Sporobiota' & biota.y == 'Sporobiota') %>%
+  mutate(diff=abs(date.x-date.y)) %>%
+  group_by(diff, person.x) %>%
+  summarise(median=median(value), sd= sd(value)) %>%
+  ungroup() %>%
+  mutate(biota = 'Sporobiota')
+
+rbind(distM, distS) %>% ggplot(aes(x=diff, y=median, color=biota)) +
+  geom_point() +
+  scale_color_manual(values=c(colm, cols)) +
+  geom_smooth(aes(group=biota)) +
+  labs(x='Days between sampling points', y='Median Jaccard distance', color='Type of biota') +
+  theme_bw()
+ggsave('plots/mothur/beta_Jaccard_throughTime.png', dpi=600)
+
+# Classical ordination plot - Bray-Curtis 
+# Calculate NMDS ordinates
+nmds_bc = metaMDS(distbc)
+nmds_positions= as.data.frame(scores(nmds_bc, display='sites')) %>%
+  rownames_to_column('Group')
+# Join with metadata
+distbc_meta = nmds_positions %>% left_join(metadata, by=join_by('Group' == 'samples'))
+# Ordination plot wih person/biota 
+distbc_meta %>%
+  ggplot(aes(x=NMDS1, y=NMDS2, color=person, shape=biota)) +
+  geom_point(size=3) +
+  #geom_text_repel(aes(label=sample), size= 4, colour='black', max.overlaps = 20) +
+  scale_size_continuous(range = c(3,6)) +
+  labs(x='', y='', shape='Type of biota', color='Individual') +
+  theme_bw()
+ggsave('plots/mothur/nmds_braycurtis.png', dpi=600)
+
+# Statistical testing of distances between people/biota of one person/biotas of all samples... 
+# Calculate multivariate dispersions of microbiota and sporobiota 
+mod = betadisper(distbc, distbc_meta$person, type= 'median')
+anova(mod)
+# p-value is significant, which means persons are not dispersed homogenous
+
+# tukeys test tells us which groups differ in relation to their variances - NONE
+TukeyHSD(mod)
+plot(mod)
+boxplot(mod)
+
+# Tukeys test, if we separate biotas! 
+mod2 = betadisper(distbc, distbc_meta$biota, type='median')
+anova(mod2)
+TukeyHSD(mod2)
+boxplot(mod2)
+
+# Do individuals different from each other?
+adonis2(distbc~person, data=distbc_meta, method='bray', permutations = 9999) # yes; p-value= 1e-04; person explains 23,4% variability
+
+# Distances between individual time-points of individual samples
+adonis2(distbc~person*time_point, data=distbc_meta, method='bray', permutations = 9999 ) # time_points explain 0,16% % variability. And are not significant
+
+# Distances between individuals, stress, bristol, time-points
+adonis2(distbc~person*stress*bristol, data=distbc_meta, method='bray', permutations = 9999, na.action = na.exclude) # Some samples do not have data for physical activity, so na.action = na.exclude 
+ # nothing is significant or explains more than 0,1 varability 
+
+# Classical ordination plot - Jaccard
+nmds_j = metaMDS(distj)
+nmds_positions= as.data.frame(scores(nmds_j, display='sites')) %>%
+  rownames_to_column('Group')
+
+distj_meta = nmds_positions %>% left_join(metadata, by=join_by('Group' == 'samples'))
+distj_meta %>%
+  ggplot(aes(x=NMDS1, y=NMDS2, color=person, shape=biota)) +
+  geom_point(size=3) +
+  #geom_text_repel(aes(label=sample), size= 4, colour='black', max.overlaps = 20) +
+  scale_size_continuous(range = c(3,6)) +
+  labs(x='', y='', shape='Type of biota', color='Individual') +
+  theme_bw()
+ggsave('plots/mothur/nmds_jaccard.png', dpi=600)
+# Statistical testing of distances between people/biota of one person/biotas of all samples... 
+# Calculate multivariate dispersions of microbiota and sporobiota 
+mod = betadisper(distj, distj_meta$person, type= 'median')
+anova(mod)
+# p-value is significant, which means persons are not dispersed homogenous
+
+# Tukeys test tells us which groups differ in relation to their variances - NONE
+TukeyHSD(mod)
+plot(mod)
+boxplot(mod)
+# Tukeys test, if we separate biotas! YES!
+mod2 = betadisper(distj, distj_meta$biota, type='median')
+anova(mod2)
+TukeyHSD(mod2)
+boxplot(mod2)
+
+# Do individuals different from each other?
+adonis2(distj~person, data=distj_meta, method='jaccard', permutations = 9999) # yes; p-value= 1e-04; person explains 12,5% variability
+
+# Distances between individual time-points of individual samples
+adonis2(distj~person*time_point, data=distj_meta, method='jaccard', permutations = 9999 ) # time_points explain 0,04% % variability. And are not significant!
+
+# Distances between individuals, stress, bristol, time-points
+adonis2(distj~person*biota*stress*bristol, data=distj_meta, method='jaccard', permutations = 9999, na.action = na.exclude) # Some samples do not have data for physical activity, so na.action = na.exclude 
+# nothing is significant or explains more than 0,2% variability in data 
+
+# Box-plot of distances between samples of 1 individual vs. between individuals Bray-Curtis
+# Create another metadata object with dubled the person and biota 
+metadata2 =metadata
+metadata2= metadata2 %>% rename(person2 = person) 
+metadata2=metadata2 %>% rename(samples2 = samples)
+
+# Turn distanec matrix into data.frame 
+distbc_df = as.data.frame(as.matrix(distbc)) %>%
+  rownames_to_column('samples') %>%
+  pivot_longer(names_to= 'samples2',values_to = "dist", cols = 2:215) %>%
+  filter(samples != samples2)
+
+dist_all = distbc_df %>%
+  left_join(metadata) %>%
+  select(samples, samples2, dist, person) %>%
+  left_join(metadata2) %>%
+  select(samples, samples2, dist, person, person2) %>%
+  mutate(same_person= if_else(person==person2, TRUE, FALSE)) %>%
+  left_join(metadata, by='samples')
+
+dist_all %>% ggplot(aes(x=same_person, y=dist, color=same_person)) +
+  #geom_boxplot(outlier.colour="black", outlier.shape=8, outlier.size=1) +
+  geom_violin() +
+  geom_point(size=0.5, alpha=0.3) +
+  stat_compare_means() +
+  facet_wrap(~biota, nrow = 1) +
+  theme(axis.text.x=element_text(angle = 45, hjust = 1, vjust = 0.5)) +
+  labs(y="Bray-Curtis distance", x="Same individual", color=element_blank()) +
+  theme_bw()
+ggsave('plots/mothur/violin_braycurtis.png', dpi=600)
+
+# Box-plot of distances between samples of 1 individual vs. between individuals Jaccard
+# Turn distanec matrix into data.frame 
+distj_df = as.data.frame(as.matrix(distj)) %>%
+  rownames_to_column('samples') %>%
+  pivot_longer(names_to= 'samples2',values_to = "dist", cols = 2:215) %>%
+  filter(samples != samples2)
+
+dist_all = distj_df %>%
+  left_join(metadata) %>%
+  select(samples, samples2, dist, person) %>%
+  left_join(metadata2) %>%
+  select(samples, samples2, dist, person, person2) %>%
+  mutate(same_person= if_else(person==person2, TRUE, FALSE)) %>%
+  left_join(metadata, by='samples')
+
+dist_all %>% ggplot(aes(x=same_person, y=dist, color=same_person)) +
+  #geom_boxplot(outlier.colour="black", outlier.shape=8, outlier.size=1) +
+  geom_violin()+
+  geom_point(size=0.5, alpha=0.3) +
+  stat_compare_means() +
+  facet_wrap(~biota, nrow = 1) +
+  theme(axis.text.x=element_text(angle = 45, hjust = 1, vjust = 0.5)) +
+  ylim(0,1) +
+  labs(y="Jaccard distance", x="Same individual", color=element_blank()) +
+  theme_bw()
+ggsave('plots/mothur/violin_jaccard.png', dpi=600)
