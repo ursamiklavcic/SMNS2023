@@ -45,7 +45,7 @@ otutab = dcast(shared_pre, Group ~ name, value.var = 'value') %>%
 # Rarefy the data once -as we sequenced so deep that for the first analysis this is not crutial! 
 otu_rare = rrarefy(otutab, sample=100000) %>% as.data.frame() %>%
   rownames_to_column('Group') %>%
-  pivot_longer(names_to = 'name', values_to = 'value', cols=2:3002) %>% 
+  pivot_longer(names_to = 'name', values_to = 'value', cols=starts_with('Otu')) %>% 
   group_by(name) %>%
   mutate(total_otu=sum(value)) %>%
   filter(total_otu > 4) %>%
@@ -163,14 +163,14 @@ ggsave('plots/mothur/correlations_ggpairs.png', dpi=600)
 otuPA = otu_rare %>% column_to_rownames('Group')
 otuPA[otuPA > 0] = 1
 otuPA = rownames_to_column(otuPA, 'Group')
-otu_meta <- left_join(otuPA, metadata, by=join_by('Group' == 'samples'))
+otuPA_meta <- left_join(otuPA, metadata, by=join_by('Group' == 'samples'))
 
 # Graph that takes into account that some OTUs are present than not and than back again - so all that are completely new
-uniqueM = otu_meta %>% 
+uniqueM = otuPA_meta %>% 
   filter(biota == 'Microbiota') %>%
     # Select only the columns I need and trasform into longer format
   select(person, day, starts_with('Otu')) %>%
-  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:3002) %>%
+  pivot_longer(names_to = 'name', values_to = 'PA', cols = starts_with('Otu')) %>%
   # Group the dataframe by person and otu (OTUs)
   group_by(person, name) %>% 
   # Arrange by day
@@ -186,11 +186,11 @@ uniqueM = otu_meta %>%
   summarise(., unique= sum(otu_unique)) %>%
   mutate(biota = 'Microbiota')
 
-uniqueS =otu_meta %>% 
+uniqueS =otuPA_meta %>% 
   filter(biota == 'Sporobiota') %>%
     # Select only the columns I need and trasform into longer format
   select(person, day, starts_with('Otu')) %>%
-  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:3002) %>%
+  pivot_longer(names_to = 'name', values_to = 'PA', cols = starts_with('Otu')) %>%
   # Group the dataframe by person and otu (OTUs)
   group_by(person, name) %>% 
   # Arrange by day
@@ -226,9 +226,9 @@ ggplot(unique_otus, aes(x=day, y=unique)) +
 ggsave('plots/mothur/accumulation_unique_log_point_excl_first.png', dpi=600)
 
 # If I don't separate microbiota and sporobiota 
-unique_all = otu_meta %>% 
+unique_all = otuPA_meta %>% 
   select(person, day, starts_with('Otu')) %>%
-  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:3002) %>%
+  pivot_longer(names_to = 'name', values_to = 'PA', cols = starts_with('Otu')) %>%
   group_by(person, name) %>% 
   arrange(day, .by_group = TRUE) %>% 
   mutate(otu_sum = cumsum(PA), 
@@ -258,9 +258,9 @@ unique_all %>%
   summarise(average_new_otu = mean(unique), sd=sd(unique))
 
 # What is the taxonomic determination of the OTUs that are new in later time-points
-unique_phylum = otu_meta %>% 
+unique_phylum = otuPA_meta %>% 
   select(person, day, starts_with('Otu')) %>%
-  pivot_longer(names_to = 'name', values_to = 'PA', cols = 3:3002) %>%
+  pivot_longer(names_to = 'name', values_to = 'PA', cols = starts_with('Otu')) %>%
   group_by(person, name) %>% 
   arrange(day, .by_group = TRUE) %>% 
   mutate(otu_sum = cumsum(PA), 
@@ -283,16 +283,16 @@ unique_phylum %>%
 ggsave('plots/mothur/taxonomy_uniques_log.png', dpi=600)
 
 # What is the total abundance of OTUs that are newly acquired in that sample?
-otu_meta %>% 
+otuPA_meta %>% 
   #filter(biota == 'Microbiota') %>%
   select(person, day, Group, starts_with('Otu')) %>%
-  pivot_longer(names_to = 'name', values_to = 'PA', cols = 4:3003) %>%
+  pivot_longer(names_to = 'name', values_to = 'PA', cols = starts_with('Otu')) %>%
   group_by(person, name) %>% 
   arrange(day, .by_group = TRUE) %>% 
   mutate(otu_sum = cumsum(PA), 
          otu_unique = ifelse(otu_sum == 1 & lag(otu_sum, default = 0) == 0, 1, 0)) %>%
   ungroup() %>%
-  left_join(otu_rare %>% pivot_longer(names_to = 'name', values_to = 'value', cols=2:3001)) %>%
+  left_join(otu_rare %>% pivot_longer(names_to = 'name', values_to = 'value', cols=starts_with('Otu'))) %>%
   # remove day 0, o get newly acquired OTUs
   filter(day != 0) %>%
   # removes the ones that are not seen later
@@ -309,8 +309,46 @@ otu_meta %>%
   theme_bw()
 ggsave('plots/mothur/uniqueOTU_abundance.png', dpi=600)
 
+# How many/which OTUs are present in the first sample and than remain in the rest of the samples, how long to they stay in the microbiota ? 
+otuR_meta = otu_rare %>% left_join(metadata, by=join_by('Group' == 'samples'))
+
+time_otu = otuR_meta %>% 
+  filter(biota == 'Microbiota') %>%
+    # Select only the columns I need and trasform into longer format
+  select(person, date, starts_with('Otu')) %>%
+  pivot_longer(names_to = 'name', values_to = 'value', cols = starts_with('Otu')) %>%
+  # Group the dataframe by person and otu (OTUs)
+  group_by(person, name) %>% 
+  # Arrange by day
+  arrange(date, .by_group = TRUE) %>% 
+  # Create new column otu_sum is 1 if the OTU is present (PA > 0) on the current day and was not present on any of the previous days
+   # If otu_sum is 1 or more than 1, that means that OTU was present on this day and days before
+  # If otu_sum is more than 1, it means it was present in the provious days, so turn that into 0 
+  mutate(otu_sum = cumsum(value),
+         persister = if_else(date == min(date) & value > 0 , 1, 
+                             if_else(otu_sum > lag(otu_sum) & lag(otu_sum, default = 0) > 0, 1, 0)), 
+         situation = if_else(date == min(date) & value > 0, 'First observation',
+                             if_else(persister == '1' & lag(persister) == '1', 'Persister', 
+                                     if_else(persister == '1' & lag(persister) == '0', 'New observation',
+                                             if_else(persister == '0' & lag(persister) == '1', 'Gone', 
+                                                     if_else(persister == '0' & lag(persister) == '0', 'Missing', 'NA')))))) %>% 
+  ungroup()
+
+time_otu  %>% mutate(occurance= if_else(situation != 'NA', 1, 0)) %>% 
+  #group_by(person, name, situation) %>%
+  #summarize(no_situations= sum(occurance)) %>% 
+  filter(situation != 'NA')%>%
+  #ungroup() %>%
+  ggplot(aes(x=as.factor(date), y=name, fill=situation, na.rm=TRUE)) +
+  geom_tile() +
+  facet_wrap(~person, nrow=3, ncol=3, scales = 'free') +
+  theme(axis.text = element_blank(), 
+        axis.ticks = element_blank(), 
+        axis.title.x = )
+
+#### TRANSIENT AND STATIONARY OTUs
 # Transient or stationary OTUs in microbiota and sporobiota.
-common_otus = otu_rare %>% pivot_longer(names_to = 'name', values_to = 'value', cols=2:3001) %>%
+common_otus = otu_rare %>% pivot_longer(names_to = 'name', values_to = 'value', cols=starts_with('Otu')) %>%
   group_by(name) %>%
   summarize(value=sum(value)) %>%
   filter(value > 10000) %>%
@@ -321,7 +359,7 @@ rowSums(otu_rel)
 
 otu_rel %>%
   rownames_to_column('Group') %>%
-  pivot_longer(names_to = 'name', values_to = 'value', cols=2:3001) %>%
+  pivot_longer(names_to = 'name', values_to = 'value', cols=starts_with('Otu')) %>%
   left_join(metadata, by=join_by('Group' == 'samples')) %>%
   group_by(name) %>%
   mutate(relabund=log(value/sum(value))) %>%
@@ -355,7 +393,8 @@ ggplot(always_personM, aes(y=Phylum, fill= Phylum)) +
   geom_bar(stat='count') +
   facet_grid(~person)
 
-
+##################
+# BETA DIVERSITY #
 # Import beta diverity Bray Curtis with 1000 resaplings from mothur 
 readDist = function(phylip_file) {
 
@@ -412,6 +451,21 @@ rbind(distM, distS) %>% ggplot(aes(x=diff, y=median, color=biota)) +
   labs(x='Days between sampling points', y='Average Bray-Curtis distance', color='Type of biota') +
   theme_bw()
 ggsave('plots/mothur/beta_BrayCurtis_throughTime.png', dpi=600)
+
+distbc %>% as.matrix() %>% 
+  as_tibble(rownames= 'sample') %>%
+  pivot_longer(-sample) %>%
+  filter(sample != name) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('sample' == 'samples')) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('name' == 'samples')) %>%
+  filter(person.x == person.y) %>%
+  group_by(person.x) %>%
+  arrange(as.Date(date, '%Y-%m-%d'), .by_group = TRUE) %>%
+  mutate(diff=value -lag(value, default = 0)) %>%
+  ggplot(aes(x=date, y=diff, color=person)) +
+  geom_line() +
+  facet_grid(~biota.x)
+
 
 # Calculate if there is a difference in the distance between samples of individuals if they were sampled closer together and more appart between microbiota and sporobiota. 
 # With Jaccard distances - which take into account only presence/absence! Not abundance such as Bray-Curtis 
