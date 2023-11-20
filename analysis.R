@@ -192,7 +192,8 @@ retention = otuPA_meta %>%
   arrange(date, .by_group = TRUE) %>% 
   # create new columns for cumulatiove sum and the number of time points this OTU is present in the data. 
   mutate(cumsumOTU = cumsum(PA), 
-         no_timepoints = cumsum(cumsumOTU > lag(cumsumOTU, default = first(cumsumOTU))) ) %>%
+         no_timepoints = ifelse(date == min(date) & PA > 0, 1, 0), 
+         no_timepoints = cumsum(cumsumOTU > lag(cumsumOTU, default = 0)) ) %>%
   # Filter the highest presence for each OTU
   filter(cumsumOTU == max(cumsumOTU)) %>%
   # remove OTUs that were not present in any time_point (not all otus are present in every person)
