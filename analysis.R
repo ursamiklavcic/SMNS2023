@@ -134,29 +134,51 @@ ggplot(alpha_meta_tmp, aes(x=day, y=sobs)) +
   labs(x='Day', y= 'Observed OTUs', color= 'Type of extreme event')
 ggsave('plots/mothur/alpha_throught_time_Extreme.png', dpi = 600)
 
-# Correlations with alpha diversity 
-#Filter each table for Microbiota and sporobiota 
-alphaM = filter(alpha_meta, biota == 'Microbiota')
-alphaS = filter(alpha_meta, biota == 'Sporobiota')
-# Make 1 table for ploting 
-corr=left_join(alphaM, alphaS, by=c('original_sample', 'sample_type',
-'person', 'sex', 'age', 'height', 'weight', 'place', 'diet', 'alergy', 'food_supplements', 'general_level_activity', 'smoking', 'antibiotics_in_3weeks', 'cecum', 'gallstones', 'operation',
-'hospitalization','infection', 'disease', 'which', 'digestion', 'household_members', 'living', 'environment', 'date', 'day', 'time_point', 'diet14', 'antibiotics14', 'antibiotics14_type',
-'antibiotics14_duration', 'probiotics14','probiotics14_type', 'prebiotics14', 'prebiotics14_type', 'medication14', 'medication14_type', 'supplements14', 'supplements14_type', 'stress',
-'extreme_event14', 'event14_type', 'event14_what','moderate14', 'active14', 'dentist14', 'dentist14_date', 'operation14', 'operation14_date', 'vaccination14', 'vaccination14_type',
-'bristol'))
+# What percentage of sporobiota is also in microbiota ? 
+# How much of sporobiota is found in microbiota in each sample ? 
+micro = otu_rare %>% left_join(metadata, by=join_by('Group' == 'samples')) %>%
+  pivot_longer(cols=starts_with('Otu')) %>%
+  filter(biota == 'Microbiota') %>%
+    select(original_sample, name, value)
+# Select only OTUs from sporobiota 
+sporo = otu_rare %>% left_join(metadata, by=join_by('Group' == 'samples')) %>%
+  pivot_longer(cols=starts_with('Otu')) %>%
+  filter(biota == 'Sporobiota') %>%
+  select(original_sample, name, value)
 
-ggplot(corr, aes(x=chao.x, y=chao.y)) +
+# Combine only samples (inner_join), that are present in microbiota and sporobiota 
+diff = inner_join(micro, sporo, by=join_by('original_sample', 'name')) %>%
+  mutate(person = substr(original_sample, 1, 1), 
+         time_point = as.numeric(sub("\\D", "", original_sample)),
+         PA.x = ifelse(value.x > 0, 1, 0), 
+         #PA.x = ifelse(is.na(PA.x), 0, PA.x), 
+         PA.y = ifelse(value.y > 0, 1, 0), 
+         #PA.y = ifelse(is.na(PA.y), 0, PA.y), 
+         PA = ifelse(PA.x == 1 & PA.y == 1, 'Microbiota',
+                 ifelse(PA.x == 1 & PA.y == 0, 'Microbiota', 
+                      ifelse(PA.x == 0 & PA.y == 1, 'Sporobiota', 'NA'))) ) %>%
+  filter(PA != 'NA' #& PA != 'both'
+         ) %>%
+  group_by(PA, person, time_point) %>%
+  summarise(value = length(PA)) %>%
+  ungroup() 
+
+ggplot(diff, aes(x=person, y=value, color=PA)) +
   geom_point() +
-  geom_smooth()
+  ylim(0, 1250) +
+  labs(x='Individual', y='Number of OTUs', color='Type of biota') +
+  theme_bw()
 
-# Correlation betwwen chao and other variables 
-corr_data = corr %>%
-  select(chao.x, chao.y, person, day, moderate14, active14, stress, bristol)
-library(GGally)
-ggpairs(corr_data, ggplot2::aes(colour=person))
+ggsave('plots/mothur/microbiota-sporobiota_person.png', dpi=600)
 
-ggsave('plots/mothur/correlations_ggpairs.png', dpi=600)
+ggplot(diff, aes(x=time_point, y=value, color=person)) +
+  geom_point() +
+  facet_grid(~PA) +
+  ylim(0, 1250) +
+  labs(x='Time points', y='Number of OTUs', color='Individual') +
+  theme_bw()
+ggsave('plots/mothur/microbiota-sporobiota_time.png', dpi=600)
+
 
 # Unique OTUs accumulation curve (how many new unique OTUs were acqured each day)
 # Join OTUtable with metadata 
@@ -166,58 +188,32 @@ otuPA = rownames_to_column(otuPA, 'Group')
 otuPA_meta <- left_join(otuPA, metadata, by=join_by('Group' == 'samples'))
 
 # Graph that takes into account that some OTUs are present than not and than back again - so all that are completely new
-uniqueM = otuPA_meta %>% 
-  filter(biota == 'Microbiota') %>%
+unique = otuPA_meta %>% 
     # Select only the columns I need and trasform into longer format
-  select(person, day, starts_with('Otu')) %>%
+  select(person, date, biota, starts_with('Otu')) %>%
   pivot_longer(names_to = 'name', values_to = 'PA', cols = starts_with('Otu')) %>%
   # Group the dataframe by person and otu (OTUs)
-  group_by(person, name) %>% 
+  group_by(person, name, biota) %>% 
   # Arrange by day
-  arrange(day, .by_group = TRUE) %>% 
+  arrange(date, .by_group = TRUE) %>% 
   # Create new column otu_sum is 1 if the OTU is present (PA > 0) on the current day and was not present on any of the previous days
    # If otu_sum is 1 or more than 1, that means that OTU was present on this day and days before
   # If otu_sum is more than 1, it means it was present in the provious days, so turn that into 0 
   mutate(otu_sum = cumsum(PA), 
          otu_unique = ifelse(otu_sum == 1 & lag(otu_sum, default = 0) == 0, 1, 0)) %>%
+  filter(date != min(date)) %>%
   ungroup() %>%
-  group_by(person, day) %>%
+  group_by(person, date, biota) %>%
   # count unique OTUs in 1 day, for each person
-  summarise(., unique= sum(otu_unique)) %>%
-  mutate(biota = 'Microbiota')
-
-uniqueS =otuPA_meta %>% 
-  filter(biota == 'Sporobiota') %>%
-    # Select only the columns I need and trasform into longer format
-  select(person, day, starts_with('Otu')) %>%
-  pivot_longer(names_to = 'name', values_to = 'PA', cols = starts_with('Otu')) %>%
-  # Group the dataframe by person and otu (OTUs)
-  group_by(person, name) %>% 
-  # Arrange by day
-  arrange(day, .by_group = TRUE) %>% 
-  # Create new column otu_sum is 1 if the OTU is present (PA > 0) on the current day and was not present on any of the previous days
-   # If otu_sum is 1 or more than 1, that means that OTU was present on this day and days before
-  # If otu_sum is more than 1, it means it was present in the provious days, so turn that into 0 
-  mutate(otu_sum = cumsum(PA), 
-         otu_unique = ifelse(otu_sum == 1 & lag(otu_sum, default = 0) == 0, 1, 0)) %>%
-  ungroup() %>%
-  group_by(person, day) %>%
-  # count unique OTUs in 1 day, for each person
-  summarise(., unique= sum(otu_unique)) %>%
-  mutate(biota = 'Sporobiota')
+  summarise(., unique= sum(otu_unique)) 
 
 # Check to see if the sum of all OTUs of one person does not exceed the total number of OTUs present in my dataset
-uniqueM %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Microbiota') %>% 
-  rbind(uniqueS %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Sporobiota')) 
+unique%>% group_by(person) %>% filter(biota == 'Microbiota') %>% summarise(sum=sum(unique))
+unique%>% group_by(person) %>% filter(biota == 'Sporobiota') %>% summarise(sum=sum(unique))
 
-# rbind uniqueM and S 
-unique_otus = rbind(uniqueM, uniqueS)
-
-ggplot(unique_otus, aes(x=day, y=unique)) +
+ggplot(unique, aes(x=date, y=unique)) +
   geom_point(aes(color=person), linewidth=1) +
   scale_y_log10() +
-  xlim(1,200) +
-  #ylim(0, 400) +
   geom_smooth() +
   facet_wrap(~biota) +
   labs(x='Day', y='log(Accumulation of new unique OTUs per time point)', color='Individual') +
@@ -236,26 +232,29 @@ unique_all = otuPA_meta %>%
   ungroup() %>%
   group_by(person, day) %>% 
   summarise(., unique= sum(otu_unique))
-
-#unique_all %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Both') %>% 
-  #rbind(uniqueM %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Microbiota')) %>% 
-uniqueM %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Microbiota') %>%
-  left_join(uniqueS %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Sporobiota'), by='person') %>%
-  ggplot() +
-  geom_segment(aes(x=person, xend=person,y=sum.x, yend=sum.y ), color='grey') +
-  geom_point(aes(x=person, y=sum.x), color=colm, size=3) +
-  geom_point(aes(x=person, y=sum.y), color=cols, size=3) +
-  theme_bw() +
-  labs(y='Individual', x='Sum of unique OTUs through duration of the study') +
-  ylim(0,2200)
-  
-ggsave('plots/mothur/unique_otus_perPerson.png', dpi=600)
-
 # What is a persons average new OTU accumulation
 unique_all %>%
   filter(day != '0') %>%
   group_by(person) %>%
   summarise(average_new_otu = mean(unique), sd=sd(unique))
+
+# #unique_all %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Both') %>% 
+#   #rbind(uniqueM %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Microbiota')) %>% 
+# uniqueM %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Microbiota') %>%
+#   left_join(uniqueS %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Sporobiota'), by='person') %>%
+#   ggplot() +
+#   geom_segment(aes(x=person, xend=person,y=sum.x, yend=sum.y ), color='grey') +
+#   geom_point(aes(x=person, y=sum.x), color=colm, size=3) +
+#   geom_point(aes(x=person, y=sum.y), color=cols, size=3) +
+#   theme_bw() +
+#   labs(y='Individual', x='Sum of unique OTUs through duration of the study') +
+#   ylim(0,2200)
+#   
+# ggsave('plots/mothur/unique_otus_perPerson.png', dpi=600)
+# In numbers 
+uniqueM %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Microbiota') %>%
+  left_join(uniqueS %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Sporobiota'), by='person') %>%
+  mutate(diff=sum.x-sum.y)
 
 # What is the taxonomic determination of the OTUs that are new in later time-points
 unique_phylum = otuPA_meta %>% 
@@ -309,9 +308,8 @@ otuPA_meta %>%
   theme_bw()
 ggsave('plots/mothur/uniqueOTU_abundance.png', dpi=600)
 
+################################## THIS PART does not work completly as it should, after SMNS
 # How many/which OTUs are present in the first sample and than remain in the rest of the samples, how long to they stay in the microbiota ? 
-otuR_meta = otu_rare %>% left_join(metadata, by=join_by('Group' == 'samples'))
-
 time_otu = otuR_meta %>% 
   filter(biota == 'Microbiota') %>%
     # Select only the columns I need and trasform into longer format
@@ -345,6 +343,8 @@ time_otu  %>% mutate(occurance= if_else(situation != 'NA', 1, 0)) %>%
   theme(axis.text = element_blank(), 
         axis.ticks = element_blank(), 
         axis.title.x = )
+ggsave('plots/mothur/time_ofOTUs.png', dpi=600)
+#######################################################################################
 
 #### TRANSIENT AND STATIONARY OTUs
 # Transient or stationary OTUs in microbiota and sporobiota.
