@@ -35,7 +35,7 @@ shared_pre = read_tsv('data/mothur/final-48.shared') %>%
   pivot_longer(-Group) %>%
   group_by(Group) %>%
   mutate(total_sample=sum(value)) %>%
-  filter(total_sample > 100000) %>%
+  filter(total_sample > 50000) %>%
   ungroup() %>%
   select(-total_sample)
 
@@ -43,7 +43,7 @@ otutab = dcast(shared_pre, Group ~ name, value.var = 'value') %>%
   column_to_rownames('Group')
 
 # Rarefy the data once -as we sequenced so deep that for the first analysis this is not crutial! 
-otu_rare = rrarefy(otutab, sample=100000) %>% as.data.frame() %>%
+otu_rare = rrarefy(otutab, sample=50000) %>% as.data.frame() %>%
   rownames_to_column('Group') %>%
   pivot_longer(names_to = 'name', values_to = 'value', cols=starts_with('Otu')) %>% 
   group_by(name) %>%
