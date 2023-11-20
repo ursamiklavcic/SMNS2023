@@ -154,11 +154,10 @@ diff = inner_join(micro, sporo, by=join_by('original_sample', 'name')) %>%
          #PA.x = ifelse(is.na(PA.x), 0, PA.x), 
          PA.y = ifelse(value.y > 0, 1, 0), 
          #PA.y = ifelse(is.na(PA.y), 0, PA.y), 
-         PA = ifelse(PA.x == 1 & PA.y == 1, 'Microbiota',
+         PA = ifelse(PA.x == 1 & PA.y == 1, 'Both',
                  ifelse(PA.x == 1 & PA.y == 0, 'Microbiota', 
                       ifelse(PA.x == 0 & PA.y == 1, 'Sporobiota', 'NA'))) ) %>%
-  filter(PA != 'NA' #& PA != 'both'
-         ) %>%
+  filter(PA != 'NA') %>%
   group_by(PA, person, time_point) %>%
   summarise(value = length(PA)) %>%
   ungroup() 
@@ -204,9 +203,15 @@ retention = otuPA_meta %>%
   summarise(sumOTU = sum(PA)) %>%
   ungroup()
 
-ggplot(retention, aes(x=no_timepoints, y=sumOTU, color=biota))+
+retention_extra = retention %>%
+  group_by(biota, no_timepoints) %>%
+  summarize(mean = mean(sumOTU), 
+            sd = sd(sumOTU)) %>% ungroup()
+
+ggplot(retention, aes(x=no_timepoints,y=sumOTU, color=biota))+
   geom_point() +
-  geom_smooth() +
+  geom_line(retention_extra, mapping = aes(y=mean, color=biota)) +
+  #geom_ribbon(retention_extra, mapping = aes(y = mean, ymin = mean - sd, ymax = mean + sd, fill = biota), alpha = .2) +
   labs(x='Number of time-points an OTU was present', y='Number of OTUs', color='Type of biota') +
   scale_x_continuous(breaks = seq(1,12, by=1))+
   scale_color_manual(values=c(colm, cols)) +
