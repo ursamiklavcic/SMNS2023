@@ -173,11 +173,45 @@ ggsave('plots/mothur/microbiota-sporobiota_person.png', dpi=600)
 
 ggplot(diff, aes(x=time_point, y=value, color=person)) +
   geom_point() +
+  #geom_line() +
   facet_grid(~PA) +
   ylim(0, 1250) +
   labs(x='Time points', y='Number of OTUs', color='Individual') +
   theme_bw()
 ggsave('plots/mothur/microbiota-sporobiota_time.png', dpi=600)
+
+# The percentage of OTUs that are present in 1, 2, 3, 4, etc time-points of an individual in microbiota and in sporobiota. 
+retention = otuPA_meta %>% 
+  # include only regular samples, withouth extreme events
+  filter(sample_type == 'regular') %>%
+  # Select only the columns I need and trasform into longer format
+  select(person, date, biota, starts_with('Otu')) %>%
+  pivot_longer(names_to = 'name', values_to = 'PA', cols = starts_with('Otu')) %>%
+  # Group and arrange by columns that are important
+  group_by(person, name, biota) %>% 
+  arrange(date, .by_group = TRUE) %>% 
+  # create new columns for cumulatiove sum and the number of time points this OTU is present in the data. 
+  mutate(cumsumOTU = cumsum(PA), 
+         no_timepoints = cumsum(cumsumOTU > lag(cumsumOTU, default = first(cumsumOTU))) ) %>%
+  # Filter the highest presence for each OTU
+  filter(cumsumOTU == max(cumsumOTU)) %>%
+  # remove OTUs that were not present in any time_point (not all otus are present in every person)
+  filter(no_timepoints != 0) %>% 
+  ungroup() %>%
+  # Calculate the number of OTUs for different biota, person and times of retention of the OTU. 
+  group_by(biota, person, no_timepoints) %>%
+  summarise(sumOTU = sum(PA)) %>%
+  ungroup()
+
+ggplot(retention, aes(x=no_timepoints, y=sumOTU, color=biota))+
+  geom_point() +
+  geom_smooth() +
+  labs(x='Number of time-points an OTU was present', y='Number of OTUs', color='Type of biota') +
+  scale_x_continuous(breaks = seq(1,12, by=1))+
+  scale_color_manual(values=c(colm, cols)) +
+  theme_bw()
+
+ggsave('plots/mothur/retention_OTUs.png', dpi=600)
 
 
 # Unique OTUs accumulation curve (how many new unique OTUs were acqured each day)
