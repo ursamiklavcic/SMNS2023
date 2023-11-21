@@ -36,7 +36,7 @@ shared_pre = read_tsv('data/mothur/final-48.shared') %>%
   group_by(Group) %>%
   mutate(total_sample=sum(value)) %>%
   filter(total_sample > 50000) %>%
-  ungroup() %>%
+  ungroup() %>% 
   select(-total_sample)
 
 otutab = dcast(shared_pre, Group ~ name, value.var = 'value') %>%
@@ -219,6 +219,38 @@ ggplot(retention, aes(x=no_timepoints,y=sumOTU, color=biota))+
 
 ggsave('plots/mothur/retention_OTUs.png', dpi=600)
 
+# What is the relative abundance of OTUs present in different number of time points of an individual? 
+otuR_meta = left_join(otu_rare, metadata, by=join_by('Group' == 'samples'))
+
+present_relabund = otuR_meta %>% 
+  # include only regular samples, withouth extreme events
+  filter(sample_type == 'regular') %>%
+  # Select only the columns I need and trasform into longer format
+  select(person, date, biota, starts_with('Otu')) %>%
+  pivot_longer(names_to = 'name', values_to = 'value', cols = starts_with('Otu')) %>%
+  mutate(PA = ifelse(value > 0, 1, 0)) %>%
+  # Group and arrange by columns that are important
+  group_by(person, name, biota) %>% 
+  arrange(date, .by_group = TRUE) %>% 
+  # create new columns for cumulatiove sum and the number of time points this OTU is present in the data. 
+  mutate(cumsumPA = cumsum(PA), 
+         cumsum_value = cumsum(value), 
+         # Relative abundance of this OTU is = the number of this OTU (in this person, and biota) devided by all OTUs in this person and biota 
+         rel_abund = cumsum_value/sum(cumsum_value) *100, 
+         no_timepoints = ifelse(date == min(date) & PA > 0, 1, 0), 
+         no_timepoints = cumsum(cumsumPA > lag(cumsumPA, default = 0)) ) %>% 
+  filter(cumsumPA == max(cumsumPA)) %>%
+  ungroup() 
+
+present_relabund %>%
+  ggplot(aes(x=no_timepoints, y=rel_abund, color=biota)) +
+  geom_point() +
+  labs(x='Number of time-points an OTU was present', y='Relative abundance of OTU in all samples present', color='Type of biota') +
+  scale_x_continuous(breaks = seq(1,12, by=1), position = 'top')+
+  ylim(100, 1) +
+  scale_color_manual(values=c(colm, cols)) +
+  theme_bw()
+ggsave('plots/mothur/retention_relativeabundance.png', dpi=600)
 
 # Unique OTUs accumulation curve (how many new unique OTUs were acqured each day)
 # Join OTUtable with metadata 
