@@ -80,9 +80,8 @@ metadataM = read.delim('data/metadata.csv', sep=',') %>%
   rownames_to_column('samples') %>%
   add_column(biota = 'Microbiota')
 
-sample_names = shared$Group
+
 metadata = rbind(metadataM, metadataS) %>%
-  filter(samples %in% sample_names) %>%
   as_tibble() %>%
   mutate(person=sub("^(\\D).*$", "\\1", .$original_sample)) %>%
   mutate(date=ymd(date)) 
@@ -179,78 +178,60 @@ ggplot(diff, aes(x=time_point, y=value, color=person)) +
   theme_bw()
 ggsave('plots/mothur/microbiota-sporobiota_time.png', dpi=600)
 
-# The percentage of OTUs that are present in 1, 2, 3, 4, etc time-points of an individual in microbiota and in sporobiota. 
-retention = otuPA_meta %>% 
-  # include only regular samples, withouth extreme events
+# Aleksander's code for determining how relative abundand were OTUs that were present in 1, 2, 3 etc time-points and how many of them are there for each point. 
+merged = left_join(metadata, otu_rel %>% rownames_to_column('samples'), by='samples') %>%
   filter(sample_type == 'regular') %>%
-  # Select only the columns I need and trasform into longer format
-  select(person, date, biota, starts_with('Otu')) %>%
-  pivot_longer(names_to = 'name', values_to = 'PA', cols = starts_with('Otu')) %>%
-  # Group and arrange by columns that are important
-  group_by(person, name, biota) %>% 
-  arrange(date, .by_group = TRUE) %>% 
-  # create new columns for cumulatiove sum and the number of time points this OTU is present in the data. 
-  mutate(cumsumOTU = cumsum(PA), 
-         no_timepoints = ifelse(date == min(date) & PA > 0, 1, 0), 
-         no_timepoints = cumsum(cumsumOTU > lag(cumsumOTU, default = 0)) ) %>%
-  # Filter the highest presence for each OTU
-  filter(cumsumOTU == max(cumsumOTU)) %>%
-  # remove OTUs that were not present in any time_point (not all otus are present in every person)
-  filter(no_timepoints != 0) %>% 
-  ungroup() %>%
-  # Calculate the number of OTUs for different biota, person and times of retention of the OTU. 
-  group_by(biota, person, no_timepoints) %>%
-  summarise(sumOTU = sum(PA)) %>%
-  ungroup()
+  column_to_rownames('samples') %>%
+  select(person, biota, starts_with('Otu'))
 
-retention_extra = retention %>%
-  group_by(biota, no_timepoints) %>%
-  summarize(mean = mean(sumOTU), 
-            sd = sd(sumOTU)) %>% ungroup()
+final <- data.frame()
+for (persona in unique(merged$person)) {
+  for (bioti in unique(merged$biota)) {
+  merged_sub <- merged[merged$biota == bioti & merged$person == persona,]
+  merged_sub <- as.data.frame(t(merged_sub[, 3:2996]))
+  
+  merged_sub2 <- merged_sub
+  merged_sub2[merged_sub2>0] <- 1
+  merged_sub2$prevalence <- rowSums(merged_sub2)
+  merged_sub$person <- persona
+  merged_sub$biota <- bioti
+  merged_sub$name <- rownames(merged_sub)
+  merged_sub2$name <- rownames(merged_sub2)
 
-ggplot(retention, aes(x=no_timepoints,y=sumOTU, color=biota))+
-  geom_point() +
-  geom_line(retention_extra, mapping = aes(y=mean, color=biota)) +
-  #geom_ribbon(retention_extra, mapping = aes(y = mean, ymin = mean - sd, ymax = mean + sd, fill = biota), alpha = .2) +
-  labs(x='Number of time-points an OTU was present', y='Number of OTUs', color='Type of biota') +
-  scale_x_continuous(breaks = seq(1,12, by=1))+
-  scale_color_manual(values=c(colm, cols)) +
+  melt1 <- melt(merged_sub2, id.vars = c('prevalence', 'name'))
+  melt2 <- melt(merged_sub, id.vars = c('person', 'biota', 'name'))
+  melt2$prevalence <- melt1$prevalence
+    
+  final <- rbind(final, melt2)
+  }
+}
+
+ggplot(na.omit(final[final$value != 0,]), aes(x = as.factor(prevalence), y = value, color=biota)) +
+  geom_boxplot() +
+  scale_y_log10() +
+  scale_color_manual(values = c(colm, cols)) +
+  labs(x='Number of times an OTU was observed', y= 'Relative abundandance of these OTUs', color='Type of biota') +
   theme_bw()
+ggsave('plots/mothur/prevalence_relabund.png', dpi=600)
 
-ggsave('plots/mothur/retention_OTUs.png', dpi=600)
+final$count <- 1/12  
+# Group_by biota, person and prevalence and summarize count (because each OTU could be present in 12 time points 1/12)
+final_agg <- aggregate(count ~ biota + person + prevalence, data = final, FUN = sum)
 
-# What is the relative abundance of OTUs present in different number of time points of an individual? 
-otuR_meta = left_join(otu_rare, metadata, by=join_by('Group' == 'samples'))
+final_agg_mean = filter(final_agg, prevalence != 0) %>% group_by(biota, prevalence) %>%
+  summarise(mean = median(count), sd=sd(count))
 
-present_relabund = otuR_meta %>% 
-  # include only regular samples, withouth extreme events
-  filter(sample_type == 'regular') %>%
-  # Select only the columns I need and trasform into longer format
-  select(person, date, biota, starts_with('Otu')) %>%
-  pivot_longer(names_to = 'name', values_to = 'value', cols = starts_with('Otu')) %>%
-  mutate(PA = ifelse(value > 0, 1, 0)) %>%
-  # Group and arrange by columns that are important
-  group_by(person, name, biota) %>% 
-  arrange(date, .by_group = TRUE) %>% 
-  # create new columns for cumulatiove sum and the number of time points this OTU is present in the data. 
-  mutate(cumsumPA = cumsum(PA), 
-         cumsum_value = cumsum(value), 
-         # Relative abundance of this OTU is = the number of this OTU (in this person, and biota) devided by all OTUs in this person and biota 
-         rel_abund = cumsum_value/sum(cumsum_value) *100, 
-         no_timepoints = ifelse(date == min(date) & PA > 0, 1, 0), 
-         no_timepoints = cumsum(cumsumPA > lag(cumsumPA, default = 0)) ) %>% 
-  filter(cumsumPA == max(cumsumPA)) %>%
-  ungroup() 
-
-present_relabund %>%
-  ggplot(aes(x=no_timepoints, y=rel_abund, color=biota)) +
+ggplot(final_agg[final_agg$prevalence != 0,], aes(x = prevalence, y = count, color=biota)) +
   geom_point() +
-  labs(x='Number of time-points an OTU was present', y='Relative abundance of OTU in all samples present', color='Type of biota') +
-  scale_x_continuous(breaks = seq(1,12, by=1), position = 'top')+
-  ylim(100, 1) +
-  scale_color_manual(values=c(colm, cols)) +
+  geom_line(final_agg_mean, mapping=aes(y=mean, color=biota)) +
+  scale_color_manual(values = c(colm, cols)) +
+  scale_x_continuous(breaks = seq(0,12, by=1))+
+  labs(x='Number of times an OTU was observed', y= 'Count of OTUs observed', color='Type of biota') +
   theme_bw()
-ggsave('plots/mothur/retention_relativeabundance.png', dpi=600)
+ggsave('plots/mothur/prevalence_count.png', dpi=600)
+
+###### End of Aleksander's code 
+
 
 # Unique OTUs accumulation curve (how many new unique OTUs were acqured each day)
 # Join OTUtable with metadata 
