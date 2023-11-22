@@ -155,28 +155,30 @@ diff = inner_join(micro, sporo, by=join_by('original_sample', 'name')) %>%
          #PA.y = ifelse(is.na(PA.y), 0, PA.y), 
          PA = ifelse(PA.x == 1 & PA.y == 1, 'Both',
                  ifelse(PA.x == 1 & PA.y == 0, 'Microbiota', 
-                      ifelse(PA.x == 0 & PA.y == 1, 'Sporobiota', 'NA'))) ) %>%
-  filter(PA != 'NA') %>%
+                      ifelse(PA.x == 0 & PA.y == 1, 'Sporobiota', 
+                             ifelse(PA.x == 0 & PA.y == 0, 'None', 'NA')))) ) %>%
+  filter(PA != 'None') %>%
   group_by(PA, person, time_point) %>%
   summarise(value = length(PA)) %>%
   ungroup() 
 
 ggplot(diff, aes(x=person, y=value, color=PA)) +
-  geom_point() +
-  ylim(0, 1250) +
+  geom_boxplot() +
+  scale_color_manual(values = c('#1DBEDA', colm, cols)) +
   labs(x='Individual', y='Number of OTUs', color='Type of biota') +
   theme_bw()
 
-ggsave('plots/mothur/microbiota-sporobiota_person.png', dpi=600)
-
-ggplot(diff, aes(x=time_point, y=value, color=person)) +
-  geom_point() +
-  #geom_line() +
-  facet_grid(~PA) +
-  ylim(0, 1250) +
-  labs(x='Time points', y='Number of OTUs', color='Individual') +
+ggsave('plots/mothur/number_MvsS.png', dpi=600)
+  
+diff %>% group_by(person, PA) %>%
+  summarise(mean_value=mean(value)) %>%
+  mutate(percentages = mean_value/sum(mean_value)) %>%
+  ggplot(aes(x=person, y=percentages, fill=PA)) +
+  geom_bar(stat = 'identity') +
+  scale_fill_manual(values = c('#1DBEDA', colm, cols)) +
+  labs(x='Individual', y='Percentage of OTUs', fill='OTUs belong to:') +
   theme_bw()
-ggsave('plots/mothur/microbiota-sporobiota_time.png', dpi=600)
+ggsave('plots/mothur/number_MvsS_person.png', dpi=600)
 
 # Aleksander's code for determining how relative abundand were OTUs that were present in 1, 2, 3 etc time-points and how many of them are there for each point. 
 merged = left_join(metadata, otu_rel %>% rownames_to_column('samples'), by='samples') %>%
@@ -206,12 +208,13 @@ for (persona in unique(merged$person)) {
   }
 }
 
-ggplot(na.omit(final[final$value != 0,]), aes(x = as.factor(prevalence), y = value, color=biota)) +
+p1 =ggplot(na.omit(final[final$value != 0,]), aes(x = as.factor(prevalence), y = value, color=biota)) +
   geom_boxplot() +
   scale_y_log10() +
   scale_color_manual(values = c(colm, cols)) +
   labs(x='Number of times an OTU was observed', y= 'Relative abundandance of these OTUs', color='Type of biota') +
-  theme_bw()
+  theme_bw() +
+  coord_flip()
 ggsave('plots/mothur/prevalence_relabund.png', dpi=600)
 
 final$count <- 1/12  
@@ -221,15 +224,22 @@ final_agg <- aggregate(count ~ biota + person + prevalence, data = final, FUN = 
 final_agg_mean = filter(final_agg, prevalence != 0) %>% group_by(biota, prevalence) %>%
   summarise(mean = median(count), sd=sd(count))
 
-ggplot(final_agg[final_agg$prevalence != 0,], aes(x = prevalence, y = count, color=biota)) +
+p2 = ggplot(final_agg[final_agg$prevalence != 0,], aes(x = prevalence, y = count, color=biota)) +
   geom_point() +
   geom_line(final_agg_mean, mapping=aes(y=mean, color=biota)) +
   scale_color_manual(values = c(colm, cols)) +
   scale_x_continuous(breaks = seq(0,12, by=1))+
   labs(x='Number of times an OTU was observed', y= 'Count of OTUs observed', color='Type of biota') +
-  theme_bw()
+  theme_bw() +
+  coord_flip()
 ggsave('plots/mothur/prevalence_count.png', dpi=600)
 
+# combine plots 
+require(ggpubr)
+ggarrange(p1, p2, 
+          common.legend = TRUE)
+
+ggsave('plots/mothur/prevalence_both.png', dpi=600)
 ###### End of Aleksander's code 
 
 
