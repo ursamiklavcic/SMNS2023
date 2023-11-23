@@ -52,11 +52,18 @@ otu_rare = rrarefy(otutab, sample=50000) %>% as.data.frame() %>%
   ungroup() %>%
   select(-total_otu) %>%
   pivot_wider(names_from = 'name', values_from = 'value')
+saveRDS(otu_rare, 'data/otu_rare.RDS')
+# Extract OTUs that are present in otu_rare
+otus=colnames(otu_rare %>% column_to_rownames('Group'))
 
 rm(otutab)
 rm(shared_pre)
 
-otus=colnames(otu_rare %>% column_to_rownames('Group'))
+# Make relative abundance tables 
+otu_rel = decostand(otu_rare %>% column_to_rownames('Group'), method='total', MARGIN = 1)
+rowSums(otu_rel)
+
+otu_rel_long = rownames_to_column(otu_rel, 'Group') %>% pivot_longer(starts_with('Otu')) %>% left_join(metadata, by=join_by('Group' == 'samples'))
 # Import taxonomy table 
 taxtab = read_tsv('data/mothur/final.opti_mcc.0.03.cons.taxonomy') %>%
   filter(OTU %in% otus) %>%
@@ -66,7 +73,7 @@ taxtab = read_tsv('data/mothur/final.opti_mcc.0.03.cons.taxonomy') %>%
          taxonomy = str_replace(taxonomy, ";$", "")) %>%
   separate(taxonomy, into=c("Domain", "Phylum", "Class", "Order", "Family", "Genus"),
            sep=";")
-
+saveRDS(taxtab, 'data/taxtab.RDS')
 # Import metadata 
 metadataS = read.csv('data/metadata.csv', sep=',') %>% 
   column_to_rownames('sporobiota') %>%
@@ -80,7 +87,6 @@ metadataM = read.delim('data/metadata.csv', sep=',') %>%
   rownames_to_column('samples') %>%
   add_column(biota = 'Microbiota')
 
-
 metadata = rbind(metadataM, metadataS) %>%
   as_tibble() %>%
   mutate(person=sub("^(\\D).*$", "\\1", .$original_sample)) %>%
@@ -89,7 +95,7 @@ metadata = rbind(metadataM, metadataS) %>%
 metadata[metadata == ''] = NA
 metadataM = filter(metadata, biota == 'Microbiota')
 metadataS = filter(metadata, biota == 'Sporobiota')
-
+saveRDS(metadata, 'data/metadata.RDS')
 # Import calculcations of alpha divrsity (subsampled to 100 000 reads per sample)
 alpha = read.delim('data/mothur/final.opti_mcc.0.03.pick.groups.ave-std.summary') %>%
   filter(method=='ave')
@@ -135,52 +141,10 @@ ggsave('plots/mothur/alpha_throught_time_Extreme.png', dpi = 600)
 
 # What percentage of sporobiota is also in microbiota ? 
 # How much of sporobiota is found in microbiota in each sample ? 
-micro = otu_rare %>% left_join(metadata, by=join_by('Group' == 'samples')) %>%
-  pivot_longer(cols=starts_with('Otu')) %>%
-  filter(biota == 'Microbiota') %>%
-    select(original_sample, name, value)
-# Select only OTUs from sporobiota 
-sporo = otu_rare %>% left_join(metadata, by=join_by('Group' == 'samples')) %>%
-  pivot_longer(cols=starts_with('Otu')) %>%
-  filter(biota == 'Sporobiota') %>%
-  select(original_sample, name, value)
+# in the code for SMNS
 
-# Combine only samples (inner_join), that are present in microbiota and sporobiota 
-diff = inner_join(micro, sporo, by=join_by('original_sample', 'name')) %>%
-  mutate(person = substr(original_sample, 1, 1), 
-         time_point = as.numeric(sub("\\D", "", original_sample)),
-         PA.x = ifelse(value.x > 0, 1, 0), 
-         #PA.x = ifelse(is.na(PA.x), 0, PA.x), 
-         PA.y = ifelse(value.y > 0, 1, 0), 
-         #PA.y = ifelse(is.na(PA.y), 0, PA.y), 
-         PA = ifelse(PA.x == 1 & PA.y == 1, 'Both',
-                 ifelse(PA.x == 1 & PA.y == 0, 'Microbiota', 
-                      ifelse(PA.x == 0 & PA.y == 1, 'Sporobiota', 
-                             ifelse(PA.x == 0 & PA.y == 0, 'None', 'NA')))) ) %>%
-  filter(PA != 'None') %>%
-  group_by(PA, person, time_point) %>%
-  summarise(value = length(PA)) %>%
-  ungroup() 
 
-ggplot(diff, aes(x=person, y=value, color=PA)) +
-  geom_boxplot() +
-  scale_color_manual(values = c('#1DBEDA', colm, cols)) +
-  labs(x='Individual', y='Number of OTUs', color='Type of biota') +
-  theme_bw()
-
-ggsave('plots/mothur/number_MvsS.png', dpi=600)
-  
-diff %>% group_by(person, PA) %>%
-  summarise(mean_value=mean(value)) %>%
-  mutate(percentages = mean_value/sum(mean_value)) %>%
-  ggplot(aes(x=person, y=percentages, fill=PA)) +
-  geom_bar(stat = 'identity') +
-  scale_fill_manual(values = c('#1DBEDA', colm, cols)) +
-  labs(x='Individual', y='Percentage of OTUs', fill='OTUs belong to:') +
-  theme_bw()
-ggsave('plots/mothur/number_MvsS_person.png', dpi=600)
-
-# Aleksander's code for determining how relative abundand were OTUs that were present in 1, 2, 3 etc time-points and how many of them are there for each point. 
+# Aleksander's code for determining how relative abundant were OTUs that were present in 1, 2, 3 etc time-points and how many of them are there for each point. 
 merged = left_join(metadata, otu_rel %>% rownames_to_column('samples'), by='samples') %>%
   filter(sample_type == 'regular') %>%
   column_to_rownames('samples') %>%
@@ -238,7 +202,6 @@ ggsave('plots/mothur/prevalence_count.png', dpi=600)
 require(ggpubr)
 ggarrange(p1, p2, 
           common.legend = TRUE)
-
 ggsave('plots/mothur/prevalence_both.png', dpi=600)
 ###### End of Aleksander's code 
 
@@ -253,36 +216,41 @@ otuPA_meta <- left_join(otuPA, metadata, by=join_by('Group' == 'samples'))
 # Graph that takes into account that some OTUs are present than not and than back again - so all that are completely new
 unique = otuPA_meta %>% 
     # Select only the columns I need and trasform into longer format
-  select(person, date, biota, starts_with('Otu')) %>%
+  select(person, time_point, biota, starts_with('Otu')) %>%
   pivot_longer(names_to = 'name', values_to = 'PA', cols = starts_with('Otu')) %>%
   # Group the dataframe by person and otu (OTUs)
   group_by(person, name, biota) %>% 
   # Arrange by day
-  arrange(date, .by_group = TRUE) %>% 
+  arrange(time_point, .by_group = TRUE) %>% 
   # Create new column otu_sum is 1 if the OTU is present (PA > 0) on the current day and was not present on any of the previous days
    # If otu_sum is 1 or more than 1, that means that OTU was present on this day and days before
   # If otu_sum is more than 1, it means it was present in the provious days, so turn that into 0 
   mutate(otu_sum = cumsum(PA), 
          otu_unique = ifelse(otu_sum == 1 & lag(otu_sum, default = 0) == 0, 1, 0)) %>%
-  filter(date != min(date)) %>%
+  #filter(date != min(date)) %>%
   ungroup() %>%
-  group_by(person, date, biota) %>%
+  group_by(person, time_point, biota) %>%
   # count unique OTUs in 1 day, for each person
-  summarise(., unique= sum(otu_unique)) 
+  summarise(., unique= sum(otu_unique)) %>%
+  ungroup() %>%
+  group_by(time_point, biota) %>%
+  mutate(percentages_unique = unique/sum(unique), 
+          median =median(unique), 
+          sd=sd(unique))
 
 # Check to see if the sum of all OTUs of one person does not exceed the total number of OTUs present in my dataset
 unique%>% group_by(person) %>% filter(biota == 'Microbiota') %>% summarise(sum=sum(unique))
 unique%>% group_by(person) %>% filter(biota == 'Sporobiota') %>% summarise(sum=sum(unique))
 
-ggplot(unique, aes(x=date, y=unique)) +
-  geom_point(aes(color=person), linewidth=1) +
+ggplot(unique, aes(x=time_point)) +
+  geom_point(aes(y=unique, color=person), size=2) +
+  geom_line(mapping=aes(y=median), color='gray', size=1.5) +
+  geom_ribbon(mapping= aes(ymin=median-sd, ymax=median +sd), fill='grey', alpha=.3) +
   scale_y_log10() +
-  geom_smooth() +
   facet_wrap(~biota) +
-  labs(x='Day', y='log(Accumulation of new unique OTUs per time point)', color='Individual') +
+  labs(x='Day', y='Number of new OTUs at each time point', color='Individual') +
   theme_bw()
-
-ggsave('plots/mothur/accumulation_unique_log_point_excl_first.png', dpi=600)
+ggsave('plots/mothur/newOTUs_log.png', dpi=600)
 
 # If I don't separate microbiota and sporobiota 
 unique_all = otuPA_meta %>% 
@@ -314,10 +282,6 @@ unique_all %>%
 #   ylim(0,2200)
 #   
 # ggsave('plots/mothur/unique_otus_perPerson.png', dpi=600)
-# In numbers 
-uniqueM %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Microbiota') %>%
-  left_join(uniqueS %>% group_by(person) %>% summarise(sum=sum(unique)) %>% mutate(biota='Sporobiota'), by='person') %>%
-  mutate(diff=sum.x-sum.y)
 
 # What is the taxonomic determination of the OTUs that are new in later time-points
 unique_phylum = otuPA_meta %>% 
@@ -330,7 +294,7 @@ unique_phylum = otuPA_meta %>%
   ungroup() %>%
   filter(day != 0) %>%
   filter(otu_unique != 0) %>%
-  left_join(taxtab, by=join_by('name' == 'otu')) %>%
+  left_join(taxtab, by='name') %>%
   group_by(Phylum) %>%
   summarise(unique_phylum=sum(otu_unique)) %>%
   filter(unique_phylum > 4)
@@ -339,10 +303,10 @@ unique_phylum %>%
   ggplot(aes(x=unique_phylum, y=Phylum, fill=Phylum)) +
   geom_bar(stat = 'identity') +
   labs(x='log(Unique acquired OTUs from each phylum)') +
-  scale_x_log10() +
+  #scale_x_log10() +
   #facet_wrap(~person) +
   theme_bw()
-ggsave('plots/mothur/taxonomy_uniques_log.png', dpi=600)
+ggsave('plots/mothur/taxonomy_uniques.png', dpi=600)
 
 # What is the total abundance of OTUs that are newly acquired in that sample?
 otuPA_meta %>% 
@@ -416,9 +380,6 @@ common_otus = otu_rare %>% pivot_longer(names_to = 'name', values_to = 'value', 
   summarize(value=sum(value)) %>%
   filter(value > 10000) %>%
   pull(name)
-
-otu_rel = decostand(otu_rare %>% column_to_rownames('Group'), method='total', MARGIN = 1)
-rowSums(otu_rel)
 
 otu_rel %>%
   rownames_to_column('Group') %>%
