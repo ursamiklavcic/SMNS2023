@@ -3,6 +3,7 @@ require(tidyverse)
 require(ggtext)
 require(vegan)
 require(ggpubr)
+require(reshape2)
 # Determine seed, theme and colors used in the analysis 
 set.seed(1996)
 # Data
@@ -51,13 +52,17 @@ ggplot(tax_occ, aes(x=where, fill=Phylum)) +
         legend.key.size = unit(18, 'pt')) +
   labs(y='Number of OTUs')
 ggsave('plots/where_taxonomy.png', dpi=600)
-  
-# This does not work as I 
+
 tax_occ_rel = data.frame(tax_occ, otu_rel)
 ggplot(tax_occ_rel, aes(x=where, y=otu_rel, fill=where)) +
   geom_boxplot() +
   scale_y_log10() +
   scale_fill_manual(values = c('#1dbeda', colm , cols)) +
+  stat_compare_means(method = 'wilcox', comparisons = list(c('Both', 'Microbiota'), 
+                                                           c('Both', 'Sporobiota'), 
+                                                           c('Microbiota', 'Sporobiota')),
+                     p.adjust.methods = 'BH', 
+                     aes(label =paste0('p=', after_stat(p.adjust))))+
   theme_bw() +
   theme(axis.title.x = element_blank(), 
         legend.position = 'none') +
@@ -89,11 +94,12 @@ new_otus = otuPA_meta %>%
   ungroup() %>%
   group_by(person, time_point, biota) %>%
   # percentage of new OTUs in 1 day, for each person
-  summarise(., new= sum(new_otu)/sum(PA)*100) %>%
+  summarise(., new= sum(new_otu)) %>%
   ungroup() %>%
   group_by(time_point, biota) %>%
   mutate(mean =median(new), 
-         sd=sd(new))
+         sd=sd(new)) %>%
+  ungroup()
 
 ggplot(new_otus, aes(x=time_point)) +
   geom_point(aes(y=new, color=biota),size=2) +
@@ -101,9 +107,27 @@ ggplot(new_otus, aes(x=time_point)) +
   #geom_ribbon(mapping= aes(ymin=mean-sd, ymax=mean +sd),  fill ='grey',  alpha=.2) +
   scale_color_manual(values = c(colm, cols)) +
   scale_x_continuous(position ='top', breaks = seq(1, 14)) +
-  labs(x='Sampling point', y='New OTUs (%)', color='Type of sample') +
+  labs(x='Sampling point', y='NUmber of new OTUs', color='Type of sample') +
   theme_bw()
 ggsave('plots/newOTUs_percent.png', dpi=600)
+
+# Is the correlation linear? 
+corr_new = new_otus %>% filter(biota == 'Microbiota') %>% left_join(new_otus %>%filter(biota == 'Sporobiota'), by=join_by('person' == 'person', 'time_point' == 'time_point'))
+
+ggscatter(corr_new, x='new.x', y='new.y', 
+          add='reg.line', conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = 'pearson', 
+          xlab='Acquisition of new OTUs in microbiota samples', ylab= 'Acquisition of new OTUs in sporobiota samples')
+
+# Is data normaly distributed? 
+shapiro.test(corr_new$new.y)
+# Q-Q plot 
+ggqqplot(corr_new$new.x, ylab='Acquisition of new OTUs in microbiota samples')
+ggqqplot(corr_new$new.y, ylab='Acquisition of new OTUs in sporobiota samples')
+
+# Person's Corelation of aquisition of new OTUs in Microbiota and Sporobiota 
+cor.test(corr_new$new.x, corr_new$new.y, method = 'pearson')
+# There is significaly significant(p-value = 2e-16), strong positive correlation (0.86) between the acquisition of new OTUs between samples in microbiota and sporobiota. 
 
 # What is the taxonomic determination and relative abundance of the OTUs that are new in later time-points?
 new_tax = otuPA_meta %>% 
@@ -241,3 +265,67 @@ plot2 = ggplot(data=occ_abun, aes(x=log10(otu_rel), y=otu_occ)) +
 ggarrange(plot1, plot2, 
           ncol=1)
 ggsave('plots/occupancy_mean_relabund.png', dpi=600)
+
+
+# Alternative Figure 4 
+otu_rel <- decostand(otu_rare %>% column_to_rownames('Group') , method="total", MARGIN=1)
+  
+merged = left_join(metadata, otu_rel %>% rownames_to_column('samples'), by='samples') %>%
+  filter(sample_type == 'regular') %>%
+  column_to_rownames('samples') %>%
+  select(person, biota, starts_with('Otu'))
+
+final <- data.frame()
+for (persona in unique(merged$person)) {
+  for (bioti in unique(merged$biota)) {
+  merged_sub <- merged[merged$biota == bioti & merged$person == persona,]
+  merged_sub <- as.data.frame(t(merged_sub[, 3:2996]))
+  
+  merged_sub2 <- merged_sub
+  merged_sub2[merged_sub2>0] <- 1
+  merged_sub2$prevalence <- rowSums(merged_sub2)/ncol(merged_sub2) *100
+  merged_sub$person <- persona
+  merged_sub$biota <- bioti
+  merged_sub$name <- rownames(merged_sub)
+  merged_sub2$name <- rownames(merged_sub2)
+
+  melt1 <- melt(merged_sub2, id.vars = c('prevalence', 'name'))
+  melt2 <- melt(merged_sub, id.vars = c('person', 'biota', 'name'))
+  melt2$prevalence <- melt1$prevalence
+    
+  final <- rbind(final, melt2)
+  }
+}
+
+p1 = ggplot(na.omit(final[final$value != 0,]), aes(x = prevalence,  y = value, color=biota)) +
+  geom_boxplot(aes(group=paste0(as.factor(prevalence), biota))) +
+  scale_y_log10() +
+  scale_color_manual(values = c(colm, cols)) +
+  labs(x='Occupancy by person (%)', y= 'log10(Relative abundandance)', color='Type of biota') +
+  theme_bw() +
+  coord_flip()
+ggsave('plots/mothur/percent_occupancy_relabund.png', dpi=600)
+
+final$count <- 1/12  
+# Group_by biota, person and prevalence and summarize count (because each OTU could be present in 12 time points 1/12)
+final_agg <- aggregate(count ~ biota + person + prevalence, data = final, FUN = sum)
+
+final_agg_mean = filter(final_agg, prevalence != 0) %>% group_by(biota, prevalence) %>%
+  summarise(mean = median(count), sd=sd(count))
+
+p2=ggplot(final_agg[final_agg$prevalence != 0,], aes(x = prevalence, y = count, color=biota)) +
+  geom_point(size=2) +
+  geom_line(final_agg_mean, mapping=aes(y=mean, color=biota), linewidth=1.5) +
+  scale_color_manual(values = c(colm, cols)) +
+  scale_x_continuous(breaks = seq(0,100, by=10)) +
+  labs(x='Occupancy by person (%)', y= 'Observed OTUs count', color='Type of biota') +
+  theme_bw() +
+  coord_flip()
+
+ggsave('plots/mothur/percent_occupancy_count', dpi=600)
+
+# combine plots 
+require(ggpubr)
+ggarrange(p1, p2, 
+          common.legend = TRUE)
+ggsave('plots/mothur/percent_occupancy_both.png', dpi=600)
