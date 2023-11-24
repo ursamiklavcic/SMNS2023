@@ -53,6 +53,7 @@ ggplot(tax_occ, aes(x=where, fill=Phylum)) +
   labs(y='Number of OTUs')
 ggsave('plots/where_taxonomy.png', dpi=600)
 
+# Figure 2
 tax_occ_rel = data.frame(tax_occ, otu_rel)
 ggplot(tax_occ_rel, aes(x=where, y=otu_rel, fill=where)) +
   geom_boxplot() +
@@ -69,7 +70,7 @@ ggplot(tax_occ_rel, aes(x=where, y=otu_rel, fill=where)) +
   labs(y='Relative abundance of OTUs')
 ggsave('plots/where_relabund.png', dpi=600) 
 
-# Figure 2 
+# Figure 4 
 otuPA = otu_rare %>% column_to_rownames('Group')
 otuPA[otuPA > 0] = 1
 otuPA = rownames_to_column(otuPA, 'Group')
@@ -107,9 +108,9 @@ ggplot(new_otus, aes(x=time_point)) +
   #geom_ribbon(mapping= aes(ymin=mean-sd, ymax=mean +sd),  fill ='grey',  alpha=.2) +
   scale_color_manual(values = c(colm, cols)) +
   scale_x_continuous(position ='top', breaks = seq(1, 14)) +
-  labs(x='Sampling point', y='NUmber of new OTUs', color='Type of sample') +
+  labs(x='Sampling point', y='Number of new OTUs', color='Type of sample') +
   theme_bw()
-ggsave('plots/newOTUs_percent.png', dpi=600)
+ggsave('plots/newOTUs.png', dpi=600)
 
 # Is the correlation linear? 
 corr_new = new_otus %>% filter(biota == 'Microbiota') %>% left_join(new_otus %>%filter(biota == 'Sporobiota'), by=join_by('person' == 'person', 'time_point' == 'time_point'))
@@ -126,9 +127,11 @@ ggqqplot(corr_new$new.x, ylab='Acquisition of new OTUs in microbiota samples')
 ggqqplot(corr_new$new.y, ylab='Acquisition of new OTUs in sporobiota samples')
 
 # Person's Corelation of aquisition of new OTUs in Microbiota and Sporobiota 
-cor.test(corr_new$new.x, corr_new$new.y, method = 'pearson')
+cor.test(corr_new$new.x, corr_new$time_point, method = 'pearson')
+cor.test(corr_new$new.y, corr_new$time_point, method = 'pearson')
 # There is significaly significant(p-value = 2e-16), strong positive correlation (0.86) between the acquisition of new OTUs between samples in microbiota and sporobiota. 
 
+# Only for me, not for presentation
 # What is the taxonomic determination and relative abundance of the OTUs that are new in later time-points?
 new_tax = otuPA_meta %>% 
   filter(time_point < 13) %>%
@@ -184,7 +187,7 @@ ggplot(new_rel, aes(x=otu_rel)) +
   theme_bw()
 ggsave('plots/new_relabund_log10.png', dpi=600)
 
-# Figure 3 
+# Figure 3
 # Import beta diverity Bray Curtis with 1000 resaplings from mothur 
 readDist = function(phylip_file) {
 
@@ -226,7 +229,53 @@ distj_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
   theme_bw()
 ggsave('plots/violin_jaccard.png', dpi=600)
 
-# Figure 4
+# Alternative figure 3
+# Calculate if there is a difference in the distance between samples of individuals if they were sampled closer together and more appart between microbiota and sporobiota. 
+distM = distj %>% as.matrix() %>% 
+  as_tibble(rownames= 'sample') %>%
+  pivot_longer(-sample) %>%
+  # Remove the distances of the same sample 
+  filter(sample != name) %>%
+  # Add metadata
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('sample' == 'samples')) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('name' == 'samples')) %>%
+  # Filter so that I have only inter-person comparisons!
+  filter(person.x == person.y & biota.x == 'Microbiota' & biota.y == 'Microbiota') %>%
+  # Calculate the difference between sampling times
+  mutate(diff=abs(date.x-date.y)) %>%
+  # group by difference between days and person
+  group_by(diff, person.x) %>%
+  summarise(median=median(value), sd= sd(value)) %>%
+  ungroup() %>%
+  mutate(biota = 'Microbiota')
+
+# Same as above, but for sporobiota
+distS =  distj %>% as.matrix() %>% 
+  as_tibble(rownames= 'sample') %>%
+  pivot_longer(-sample) %>%
+  filter(sample != name) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('sample' == 'samples')) %>%
+  left_join(metadata %>% select(samples, person, date, biota), by=join_by('name' == 'samples')) %>%
+  filter(person.x == person.y & biota.x == 'Sporobiota' & biota.y == 'Sporobiota') %>%
+  mutate(diff=abs(date.x-date.y)) %>%
+  group_by(diff, person.x) %>%
+  summarise(median=median(value), sd= sd(value)) %>%
+  ungroup() %>%
+  mutate(biota = 'Sporobiota')
+
+rbind(distM, distS) %>% ggplot(aes(x=diff, y=median, color=biota)) +
+  geom_point() +
+  scale_color_manual(values=c(colm, cols)) +
+  geom_smooth(aes(group=biota)) +
+  labs(x='Days between sampling points', y='Median Jaccard distance', color='Type of biota') +
+  theme_bw()
+ggsave('plots/beta_Jaccard_throughTime.png', dpi=600)
+
+# Pearsons correlation between median of distance between samples and time 
+cor.test(as.numeric(distM$diff), distM$median, method='pearson') # Positive correlation (0.16) is statistically significant (p=0.00085)
+cor.test(as.numeric(distS$diff), distS$median, method='pearson') # Positive correlation (0.11) is statistically not significant (p-value = 0.0427)
+
+# Figure 5
 # Occupancy plot (code by Shade and Stopnisek)
 otutab = otu_rare %>% filter(str_detect(Group, '^M')) %>%
   column_to_rownames('Group') %>% t() 
@@ -266,8 +315,7 @@ ggarrange(plot1, plot2,
           ncol=1)
 ggsave('plots/occupancy_mean_relabund.png', dpi=600)
 
-
-# Alternative Figure 4 
+# Figure 3
 otu_rel <- decostand(otu_rare %>% column_to_rownames('Group') , method="total", MARGIN=1)
   
 merged = left_join(metadata, otu_rel %>% rownames_to_column('samples'), by='samples') %>%
@@ -297,23 +345,14 @@ for (persona in unique(merged$person)) {
   }
 }
 
-p1 = ggplot(na.omit(final[final$value != 0,]), aes(x = prevalence,  y = value, color=biota)) +
-  geom_boxplot(aes(group=paste0(as.factor(prevalence), biota))) +
-  scale_y_log10() +
-  scale_color_manual(values = c(colm, cols)) +
-  labs(x='Occupancy by person (%)', y= 'log10(Relative abundandance)', color='Type of biota') +
-  theme_bw() +
-  coord_flip()
-ggsave('plots/mothur/percent_occupancy_relabund.png', dpi=600)
-
 final$count <- 1/12  
 # Group_by biota, person and prevalence and summarize count (because each OTU could be present in 12 time points 1/12)
 final_agg <- aggregate(count ~ biota + person + prevalence, data = final, FUN = sum)
 
 final_agg_mean = filter(final_agg, prevalence != 0) %>% group_by(biota, prevalence) %>%
-  summarise(mean = median(count), sd=sd(count))
+  summarise(mean = mean(count), sd=sd(count))
 
-p2=ggplot(final_agg[final_agg$prevalence != 0,], aes(x = prevalence, y = count, color=biota)) +
+ggplot(final_agg[final_agg$prevalence != 0,], aes(x = prevalence, y = count, color=biota)) +
   geom_point(size=2) +
   geom_line(final_agg_mean, mapping=aes(y=mean, color=biota), linewidth=1.5) +
   scale_color_manual(values = c(colm, cols)) +
@@ -323,9 +362,3 @@ p2=ggplot(final_agg[final_agg$prevalence != 0,], aes(x = prevalence, y = count, 
   coord_flip()
 
 ggsave('plots/mothur/percent_occupancy_count', dpi=600)
-
-# combine plots 
-require(ggpubr)
-ggarrange(p1, p2, 
-          common.legend = TRUE)
-ggsave('plots/mothur/percent_occupancy_both.png', dpi=600)
