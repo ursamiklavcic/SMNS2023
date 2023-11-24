@@ -536,6 +536,10 @@ rbind(distM, distS) %>% ggplot(aes(x=diff, y=median, color=biota)) +
   theme_bw()
 ggsave('plots/mothur/beta_Jaccard_throughTime.png', dpi=600)
 
+# Pearsons correlation between median of distance between samples and time 
+cor.test(as.numeric(distM$diff), distM$median, method='pearson') # Positive correlation (0.16) is statistically significant (p=0.00085)
+cor.test(as.numeric(distS$diff), distS$median, method='pearson') # Positive correlation (0.11) is statistically not significant (p-value = 0.0427)
+
 # Classical ordination plot - Bray-Curtis 
 # Calculate NMDS ordinates
 nmds_bc = metaMDS(distbc)
