@@ -45,11 +45,13 @@ tax_occ = rownames_to_column(otu_where, 'name') %>%
 
 ggplot(tax_occ, aes(x=where, fill=Phylum)) +
   geom_bar(stat='count') +
-  theme_bw() +
+  theme_bw(base_size = 18) +
   theme(axis.title.x = element_blank(), 
         legend.title = element_blank(), 
         legend.text = element_markdown(), 
-        legend.key.size = unit(18, 'pt')) +
+        legend.key.size = unit(18, 'pt'), 
+        text = element_text(family = "Calibri")
+        ) +
   labs(y='Number of OTUs')
 ggsave('plots/where_taxonomy.png', dpi=600)
 
@@ -59,14 +61,10 @@ ggplot(tax_occ_rel, aes(x=where, y=otu_rel, fill=where)) +
   geom_boxplot() +
   scale_y_log10() +
   scale_fill_manual(values = c('#1dbeda', colm , cols)) +
-  stat_compare_means(method = 'wilcox', comparisons = list(c('Both', 'Microbiota'), 
-                                                           c('Both', 'Sporobiota'), 
-                                                           c('Microbiota', 'Sporobiota')),
-                     p.adjust.methods = 'BH', 
-                     aes(label =paste0('p=', after_stat(p.adjust))))+
-  theme_bw() +
+  theme_bw(base_size = 18) +
   theme(axis.title.x = element_blank(), 
-        legend.position = 'none') +
+        legend.position = 'none', 
+         text = element_text(family = "Calibri")) +
   labs(y='Relative abundance of OTUs')
 ggsave('plots/where_relabund.png', dpi=600) 
 
@@ -103,13 +101,14 @@ new_otus = otuPA_meta %>%
   ungroup()
 
 ggplot(new_otus, aes(x=time_point)) +
-  geom_point(aes(y=new, color=biota),size=2) +
-  geom_line(mapping=aes(y=mean, color=biota), linewidth=1) +
+  geom_point(aes(y=new, color=biota),size=3) +
+  geom_line(mapping=aes(y=mean, color=biota), linewidth=1.5) +
   #geom_ribbon(mapping= aes(ymin=mean-sd, ymax=mean +sd),  fill ='grey',  alpha=.2) +
   scale_color_manual(values = c(colm, cols)) +
-  scale_x_continuous(position ='top', breaks = seq(1, 14)) +
+  scale_x_continuous(breaks = seq(1, 14)) +
   labs(x='Sampling point', y='Number of new OTUs', color='Type of sample') +
-  theme_bw()
+  theme_bw(base_size=18) +
+  theme( text = element_text(family = "Calibri"))
 ggsave('plots/newOTUs.png', dpi=600)
 
 # Is the correlation linear? 
@@ -226,7 +225,8 @@ distj_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
   #geom_point(size=0.5, alpha=0.3) +
   stat_compare_means(aes(group=paste0(same_person, which_biota))) +
   labs(y="Jaccard distance", x="", fill='Type of sample') +
-  theme_bw()
+  theme_bw(base_size = 18) +
+  theme( text = element_text(family = "Calibri"))
 ggsave('plots/violin_jaccard.png', dpi=600)
 
 # Alternative figure 3
@@ -263,12 +263,14 @@ distS =  distj %>% as.matrix() %>%
   ungroup() %>%
   mutate(biota = 'Sporobiota')
 
-rbind(distM, distS) %>% ggplot(aes(x=diff, y=median, color=biota)) +
+rbind(distM, distS) %>% 
+  ggplot(aes(x=diff, y=median, color=biota)) +
   geom_point() +
   scale_color_manual(values=c(colm, cols)) +
-  geom_smooth(aes(group=biota)) +
-  labs(x='Days between sampling points', y='Median Jaccard distance', color='Type of biota') +
-  theme_bw()
+  geom_smooth(aes(group=biota), method = 'lm') +
+  labs(x='Days between sampling points', y='Median Jaccard distance', color='Type of sample') +
+  theme_bw(base_size = 18) +
+  theme( text = element_text(family = "Calibri"))
 ggsave('plots/beta_Jaccard_throughTime.png', dpi=600)
 
 # Pearsons correlation between median of distance between samples and time 
@@ -291,7 +293,8 @@ occ_abun <- data.frame(otu_occ=otu_occ, otu_rel=otu_rel) %>%           # combini
 plot1 = ggplot(data=occ_abun, aes(x=log10(otu_rel), y=otu_occ)) +
   geom_point(pch=21, fill=colm) +
   labs(x="log10(mean relative abundance)", y="Occupancy") +
-  theme_bw()
+  theme_bw(base_size = 18) +
+  theme( text = element_text(family = "Calibri"))
 
 # For sporobiota
 otutab = otu_rare %>% filter(str_detect(Group, '^S')) %>%
@@ -308,10 +311,13 @@ occ_abun <- data.frame(otu_occ=otu_occ, otu_rel=otu_rel) %>%
 plot2 = ggplot(data=occ_abun, aes(x=log10(otu_rel), y=otu_occ)) +
   geom_point(pch=21, fill=cols) +
   labs(x="log10(mean relative abundance)", y="Occupancy") +
-  theme_bw()
+  theme_bw(base_size = 18) +
+  theme( text = element_text(family = "Calibri"))
   #facet_wrap(~Phylum, ncol=3, nrow = 4)
 
-ggarrange(plot1, plot2, 
+ggarrange(plot1 + rremove("ylab") + rremove("xlab"), 
+          plot2 + rremove("ylab"), 
+          labels = NULL, 
           ncol=1)
 ggsave('plots/occupancy_mean_relabund.png', dpi=600)
 
@@ -331,7 +337,7 @@ for (persona in unique(merged$person)) {
   
   merged_sub2 <- merged_sub
   merged_sub2[merged_sub2>0] <- 1
-  merged_sub2$prevalence <- rowSums(merged_sub2)/ncol(merged_sub2) *100
+  merged_sub2$prevalence <- rowSums(merged_sub2)
   merged_sub$person <- persona
   merged_sub$biota <- bioti
   merged_sub$name <- rownames(merged_sub)
@@ -353,12 +359,13 @@ final_agg_mean = filter(final_agg, prevalence != 0) %>% group_by(biota, prevalen
   summarise(mean = mean(count), sd=sd(count))
 
 ggplot(final_agg[final_agg$prevalence != 0,], aes(x = prevalence, y = count, color=biota)) +
-  geom_point(size=2) +
+  geom_point(size=3) +
   geom_line(final_agg_mean, mapping=aes(y=mean, color=biota), linewidth=1.5) +
   scale_color_manual(values = c(colm, cols)) +
-  scale_x_continuous(breaks = seq(0,100, by=10)) +
-  labs(x='Occupancy by person (%)', y= 'Observed OTUs count', color='Type of biota') +
-  theme_bw() +
+  scale_x_continuous(breaks = seq(0,12, by=1)) +
+  labs(x='Occupancy by person', y= 'Number of observed new OTUs', color='Type of sample') +
+  theme_bw(base_size = 18) +
+  theme(text = element_text(family = "Calibri")) +
   coord_flip()
 
-ggsave('plots/mothur/percent_occupancy_count', dpi=600)
+ggsave('plots/occupancy_count.png', dpi=600)
