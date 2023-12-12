@@ -2,4 +2,4 @@
 
 Repository for analysis of V3V4 region of the 16S rRNA data acquired from longitudinal sampling of healthy adult males in Slovenia. 
 
-Unfinished analysis! 
+All the code for the figures for presentation at the SMNS are in file SMNS.R. 
